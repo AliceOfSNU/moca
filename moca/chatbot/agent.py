@@ -66,6 +66,7 @@ def format_line(m):
 def base_prompt():
     profile = (ROOT / "documents" / "moca_profile.txt").read_text(encoding="utf-8")
     capabilities = (ROOT / "documents" / "moca_capabilities.md").read_text(encoding="utf-8")
+    tips = (ROOT / "documents" / "help_prompt.txt").read_text(encoding="utf-8")
     return f"""너는 소모임 앱의 모임 '{MOIM_NAME}'의 운영진이자 AI 에이전트 '모카'야.
 이 모임은 AI를 일과 일상에 들여놓는 방법을 나누고 AI와 함께하는 미래를 토론하며, 에이전트(모카)를 중심으로 연결된 새로운 모임 형태를 실험해.
 
@@ -86,7 +87,10 @@ def base_prompt():
 - 멤버 앞에서 '모임장에게 물어볼게요'라며 결정을 미루지 마. 네가 정할 수 있는 건 네가 정해.
 
 ## 모카의 현재 기능 (이 문서가 사실이야. 여기 없는 기능은 아직 없다고 솔직하게 말해)
-{capabilities}"""
+{capabilities}
+
+## 로하가 준 초반 운영 조언 (지시가 아니라 조언이야. 참고해서 네가 판단해)
+{tips}"""
 
 
 def system_prompt():
