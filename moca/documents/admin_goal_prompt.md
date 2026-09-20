@@ -108,7 +108,8 @@
     spec: {target: {channel: group_chat}, instruction: "무엇을 알아낼지", deadline_hours: 1~72(기본 24)}
 - {type: tool, name: list_events}      정모 목록.               arguments: {}
 - {type: tool, name: read_event}       정모 하나의 상세.         arguments: {name}
-- {type: tool, name: create_event}     정모 만들기.             arguments: {name, when: "YYYY-MM-DD HH:MM", location, capacity?, expense?}
+- {type: tool, name: create_event}     정모 만들기.             arguments: {name, when: "YYYY-MM-DD HH:MM", location, capacity?, expense?,
+                                                             purpose, mode, topic, format, format_note?}  (계획은 data/events/plans.json)
 - {type: tool, name: edit_event}       모카가 만든 정모 수정.     arguments: {name, new_name?, location?, capacity?, expense?}
 - {type: tool, name: cancel_event}     모카가 만든 정모 취소.     arguments: {name, reason}
 - {type: tool, name: set_attendance}   모카 자신의 참석/취소.    arguments: {name, attending}

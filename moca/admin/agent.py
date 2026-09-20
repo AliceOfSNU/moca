@@ -17,8 +17,9 @@ import time
 
 from chatbot.agent import ROOT, base_prompt
 from chatbot.group_task import render_summary
-from admin.events import (MAX_CREATES_PER_DAY, check_change, check_create, find_event, load_index,
-                            log_action, mark_mine, sync_events)
+from admin.events import (FORMATS, MAX_CREATES_PER_DAY, MODES, check_change, check_create, check_plan,
+                           describe_plan, drop_plan, find_event, get_plan, load_index, log_action, mark_mine,
+                           rename_plan, set_plan, sync_events)
 from chatbot.members import KINDS, members_with_notes
 from chatbot.post_tools import POST_SEARCH_RULES, create_with_post_tools
 from chatbot.store import ChatStore
@@ -77,6 +78,16 @@ def shared_member_interests():
     return "\n".join(lines) or "(아직 운영에 활용해도 된다고 허락된 멤버 정보가 없음)"
 
 
+PLAN_FIELDS = {
+    "purpose": {"type": "string", "description": "왜 여는지 한두 문장 (120자 이내). 어떤 목표·멤버 요청에서 나왔는지"},
+    "mode": {"type": "string", "enum": list(MODES), "description": "offline / online / hybrid"},
+    "topic": {"type": "string", "description": "주제 한 줄 (60자 이내)"},
+    "format": {"type": "string", "enum": list(FORMATS),
+               "description": "talk=발표, discussion=그룹 토론, workshop=같이 실습, cowork=각자 할 일·자율 스터디, social=친목"},
+    "format_note": {"type": "string", "description": "진행 방식 메모 (300자 이내). 누가 이야기하는지, 순서, 준비물 등"},
+}
+
+
 class EventTools:
     """정모 tools. Every write goes through admin.events rules first, then the app, then the log."""
 
@@ -104,47 +115,78 @@ class EventTools:
         return "\n".join(
             f"{e['name']} | {e['when_text']} | {e['location']} | {e['joiners']}/{e['capacity']}명"
             f" | 비용 {e['expense']} | {'모카가 만듦' if e['mine'] else '다른 운영진이 만듦'}"
-            f"{' | 모카 참석중' if e['attending'] else ''}{' | 정원 참' if e['full'] else ''}" for e in events)
+            f"{' | 모카 참석중' if e['attending'] else ''}{' | 정원 참' if e['full'] else ''}"
+            + (f" | {describe_plan(plan, short=True)}" if (plan := get_plan(e["name"])) else "") for e in events)
 
     def read_event(self, name=None):
         event = find_event(name)
         if event is None:
             return f"'{name}' 정모를 찾을 수 없습니다. list_events로 이름을 확인하세요."
-        return json.dumps(event, ensure_ascii=False)
+        return json.dumps({**event, "plan": get_plan(name)}, ensure_ascii=False)
 
     # writing -------------------------------------------------------------------
-    def create_event(self, name=None, when=None, location=None, capacity=20, expense=0):
+    def create_event(self, name=None, when=None, location=None, capacity=20, expense=0,
+                     purpose=None, mode=None, topic=None, format=None, format_note=None):
         try:
             at = dt.datetime.strptime(when, "%Y-%m-%d %H:%M")
         except (TypeError, ValueError):
             return "when은 'YYYY-MM-DD HH:MM' 형식이어야 합니다"
         capacity, expense = int(capacity), int(expense)
-        problem = check_create(name, at, location, capacity, expense)
+        plan = {"purpose": purpose, "mode": mode, "topic": topic, "format": format, "format_note": format_note}
+        problem = check_create(name, at, location, capacity, expense) or check_plan(plan, location)
         if problem:
             return f"만들지 않았습니다: {problem}"
         args = {"name": name, "when": when, "location": location, "capacity": capacity, "expense": expense}
         result = self._run("create_event", args, lambda: self.ui.create(name, at, location, expense, capacity))
         if result.startswith("create_event 완료"):
             mark_mine(name)
+            goal = self.agent[5:] if self.agent.startswith("goal:") else None
+            set_plan(name, {**{k: (v or "").strip() or None for k, v in plan.items()},
+                            "goal_id": goal, "created_by": self.agent, "created_at": time.strftime("%Y-%m-%d %H:%M:%S")})
         return result
 
-    def edit_event(self, name=None, new_name=None, location=None, capacity=None, expense=None):
+    def edit_event(self, name=None, new_name=None, location=None, capacity=None, expense=None,
+                   purpose=None, mode=None, topic=None, format=None, format_note=None):
         problem = check_change(name)
         if problem:
             return f"수정하지 않았습니다: {problem}"
-        if new_name is None and location is None and capacity is None and expense is None:
-            return "바꿀 내용을 하나 이상 지정하세요 (new_name, location, capacity, expense)"
-        args = {k: v for k, v in (("name", name), ("new_name", new_name), ("location", location),
-                                  ("capacity", capacity), ("expense", expense)) if v is not None}
-        return self._run("edit_event", args,
-                         lambda: self.ui.edit(name, new_name=new_name, location=location,
-                                              expense=expense, capacity=capacity))
+        plan_edit = {k: v for k, v in (("purpose", purpose), ("mode", mode), ("topic", topic), ("format", format),
+                                       ("format_note", format_note)) if v is not None}
+        app_edit = any(v is not None for v in (new_name, location, capacity, expense))
+        if not app_edit and not plan_edit:
+            return "바꿀 내용을 하나 이상 지정하세요"
+        current = get_plan(name) or {}
+        merged = {**current, **plan_edit}
+        problem = check_plan(merged, location if location is not None else (find_event(name) or {}).get("location"),
+                             partial=not current)
+        if problem:
+            return f"수정하지 않았습니다: {problem}"
+        result = f"edit_event 완료: {plan_edit}"
+        if app_edit:
+            args = {k: v for k, v in (("name", name), ("new_name", new_name), ("location", location),
+                                      ("capacity", capacity), ("expense", expense)) if v is not None}
+            result = self._run("edit_event", args,
+                               lambda: self.ui.edit(name, new_name=new_name, location=location,
+                                                    expense=expense, capacity=capacity))
+            if not result.startswith("edit_event 완료"):
+                return result
+        elif self.dry_run:
+            return f"(dry-run) 정모 계획 수정: {plan_edit}"
+        if plan_edit:
+            set_plan(name, {**merged, "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")})
+            log_action(self.agent, "edit_plan", {"name": name, **plan_edit}, "ok")
+        if new_name:
+            rename_plan(name, new_name)
+        return result
 
     def cancel_event(self, name=None, reason=None):
         problem = check_change(name, deleting=True)
         if problem:
             return f"취소하지 않았습니다: {problem}"
-        return self._run("cancel_event", {"name": name, "reason": reason}, lambda: self.ui.delete(name))
+        result = self._run("cancel_event", {"name": name, "reason": reason}, lambda: self.ui.delete(name))
+        if result.startswith("cancel_event 완료"):
+            drop_plan(name)
+        return result
 
     def set_attendance(self, name=None, attending=True):
         if find_event(name) is None:
@@ -160,19 +202,24 @@ class EventTools:
             {"type": "function", "name": "read_event", "description": "정모 하나의 자세한 정보를 본다.",
              "parameters": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}},
             {"type": "function", "name": "create_event",
-             "description": "정모를 새로 만든다. 모카가 자동으로 참석자가 된다. 근거 없이 만들지 마라.",
+             "description": "정모를 새로 만든다. 모카가 자동으로 참석자가 된다. 근거 없이 만들지 마라. "
+                            "앱의 정모에는 이름·일시·장소·비용·정원밖에 없어서, 왜 열고 어떻게 진행하는지는 "
+                            "계획(purpose·mode·topic·format)으로 함께 남긴다. 계획은 아직 멤버에게 보이지 않는다.",
              "parameters": {"type": "object", "properties": {
                  "name": {"type": "string", "description": "정모 이름 (40자 이내)"},
                  "when": {"type": "string", "description": when_help},
-                 "location": {"type": "string", "description": "장소. 온라인이면 '온라인(소모임 앱 채팅)'처럼"},
+                 "location": {"type": "string", "description": "장소. 온라인이면 '온라인(Google Meet)'처럼"},
                  "capacity": {"type": "integer", "description": "정원 1~60, 기본 20"},
-                 "expense": {"type": "integer", "description": "비용(원), 기본 0"}},
-                 "required": ["name", "when", "location"]}},
+                 "expense": {"type": "integer", "description": "비용(원), 기본 0"},
+                 **PLAN_FIELDS},
+                 "required": ["name", "when", "location", "purpose", "mode", "topic", "format"]}},
             {"type": "function", "name": "edit_event",
-             "description": "모카가 만든 정모의 이름·장소·정원·비용을 바꾼다. 날짜와 시간은 앱에서 바꿀 수 없다.",
+             "description": "모카가 만든 정모의 이름·장소·정원·비용이나 계획을 바꾼다. 날짜와 시간은 앱에서 바꿀 수 없다. "
+                            "계획만 바꾸면 앱은 건드리지 않는다.",
              "parameters": {"type": "object", "properties": {
                  "name": {"type": "string"}, "new_name": {"type": "string"}, "location": {"type": "string"},
-                 "capacity": {"type": "integer"}, "expense": {"type": "integer"}}, "required": ["name"]}},
+                 "capacity": {"type": "integer"}, "expense": {"type": "integer"}, **PLAN_FIELDS},
+                 "required": ["name"]}},
             {"type": "function", "name": "cancel_event",
              "description": "모카가 만든 정모를 취소(삭제)한다. 다른 멤버가 이미 참석 신청했으면 할 수 없다.",
              "parameters": {"type": "object", "properties": {

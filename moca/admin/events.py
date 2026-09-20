@@ -38,6 +38,96 @@ def log_action(agent, action, args, result, note=""):
                             "args": args, "result": result, "note": note}, ensure_ascii=False) + "\n")
 
 
+# --- plans: what the app has no field for -----------------------------------------------
+# 소모임's 정모 form is only name / time / place / cost / capacity. Why a 정모 exists and how it runs is kept
+# here, keyed by 정모 name, for the 정모 모카 opens. Separate from index.json because sync_events rebuilds that
+# from the app. Members don't see this yet; a later tool will link a 정모 to a board post that describes it.
+
+PLANS = EVENTS / "plans.json"
+MODES = {"offline": "오프라인", "online": "온라인", "hybrid": "온·오프라인 함께"}
+FORMATS = {"talk": "발표 (한두 사람이 이야기하고 나머지는 듣기)", "discussion": "그룹 토론",
+           "workshop": "같이 실습", "cowork": "각자 할 일·자율 스터디", "social": "친목"}
+PLAN_LIMITS = {"purpose": 120, "topic": 60, "format_note": 300}
+
+
+def load_plans():
+    if PLANS.exists():
+        return json.loads(PLANS.read_text(encoding="utf-8"))
+    return {}
+
+
+def save_plans(plans):
+    EVENTS.mkdir(parents=True, exist_ok=True)
+    PLANS.write_text(json.dumps(plans, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def get_plan(name):
+    return load_plans().get(name)
+
+
+def set_plan(name, plan):
+    plans = load_plans()
+    plans[name] = plan
+    save_plans(plans)
+
+
+def rename_plan(old, new):
+    plans = load_plans()
+    if old in plans:
+        plans[new] = plans.pop(old)
+        save_plans(plans)
+
+
+def drop_plan(name):
+    plans = load_plans()
+    if plans.pop(name, None) is not None:
+        save_plans(plans)
+
+
+def check_plan(plan, location, partial=False):
+    """None if the plan is usable. With `partial`, only the fields given are checked (an edit)."""
+    for field in ("purpose", "topic", "mode", "format"):
+        if not partial and not (plan.get(field) or "").strip():
+            return f"{field}를 적어야 합니다"
+    for field, limit in PLAN_LIMITS.items():
+        if len(plan.get(field) or "") > limit:
+            return f"{field}는 {limit}자 이내여야 합니다"
+    if plan.get("mode") and plan["mode"] not in MODES:
+        return f"mode는 {list(MODES)} 중 하나여야 합니다"
+    if plan.get("format") and plan["format"] not in FORMATS:
+        return f"format은 {list(FORMATS)} 중 하나여야 합니다"
+    online = "온라인" in (location or "")
+    if plan.get("mode") == "online" and location is not None and not online:
+        return "온라인 정모면 장소를 '온라인(Google Meet)'처럼 적어야 합니다"
+    if plan.get("mode") == "offline" and online:
+        return "장소가 온라인인데 mode가 offline입니다"
+    return None
+
+
+def describe_plan(plan, short=False):
+    if not plan:
+        return ""
+    head = f"{MODES.get(plan['mode'], plan['mode'])} · {FORMATS.get(plan['format'], plan['format'])} · 주제: {plan['topic']}"
+    if short:
+        return head
+    note = f"\n  진행: {plan['format_note']}" if plan.get("format_note") else ""
+    return f"{head}\n  목적: {plan['purpose']}{note}"
+
+
+def plans_block():
+    """For 채팅 모카 and 1:1 모카: what the 정모 모카 opened are for, so it can answer "이번 정모 뭐 해?"."""
+    plans, events = load_plans(), {e["name"]: e for e in load_index()["events"]}
+    upcoming = [(name, plan, events[name]) for name, plan in plans.items() if name in events]
+    if not upcoming:
+        return ""
+    lines = ["\n\n## 네가(운영 모카로) 연 정모의 계획 (앱의 정모 카드에는 안 보이는 내용이야)"]
+    for name, plan, event in upcoming:
+        lines.append(f"- '{name}' — {event['when_text']}, {event['location']}, {event['joiners']}/{event['capacity']}명\n"
+                     f"  {describe_plan(plan)}")
+    lines.append("- 멤버가 물으면 이 계획대로 알려 줘. 계획에 없는 내용은 지어내지 말고, 정해지지 않았다고 말해.")
+    return "\n".join(lines)
+
+
 def parse_when(text, now=None):
     """'9.24(목) 20:00' -> ISO 'YYYY-MM-DD HH:MM'. The app shows no year, so a date far in the past means next year."""
     now = now or dt.datetime.now()

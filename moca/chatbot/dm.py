@@ -18,6 +18,7 @@ from chatbot.config import MOIM_NAMES
 from chatbot.member_tool import RECORDING_RULES, TOOL as MEMBER_TOOL, MemberNotes
 from chatbot.members import notes_block
 from chatbot.profiles import own_block
+from admin.events import plans_block
 from chatbot.memory_consent import (ask_prompt, awaiting, classify, due, mark_asked, mark_unclear,
                                     parse_command, set_sharing, shares)
 from chatbot.post_tools import POST_SEARCH_RULES, create_with_post_tools
@@ -54,7 +55,7 @@ def dm_prompt(member):
 - 기능 문서에 없는 일을 요청받으면 아직 그 기능이 없다고 안내해. 운영 관련 요청(신고, 건의 등)은 네가 직접 받아 두고, 앱에서 모임장 계정만 할 수 있는 조치는 로하가 대신 실행한다고 안내해.
 - 기록과 개인정보에 대해 물으면 기능 문서에 적힌 대로 정확하게 답해.
 - 멤버가 자기에 대해 무엇을 기억하는지 궁금해하거나 활용 범위를 바꾸고 싶어 하면, '/memory'로 확인하고
-  '/memory on' · '/memory off'로 모임 운영 활용을 켜고 끌 수 있다고 알려 줘."""         + POST_SEARCH_RULES + RECORDING_RULES + notes_block(member, sharing=shares(member)) + own_block(member) + stardust.member_block(member) + status_block()
+  '/memory on' · '/memory off'로 모임 운영 활용을 켜고 끌 수 있다고 알려 줘."""         + POST_SEARCH_RULES + RECORDING_RULES + notes_block(member, sharing=shares(member)) + own_block(member) + plans_block() + stardust.member_block(member) + status_block()
 
 
 def member_dir(member):

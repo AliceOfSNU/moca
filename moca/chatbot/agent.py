@@ -121,8 +121,9 @@ def _task_context():
     from admin.votes import chat_block  # 운영 모카가 올린 투표 (하네스가 채팅방에 공유해 둔 것)
     from chatbot.group_task import task_context
     from harness.presence import status_block
+    from admin.events import plans_block  # 운영 모카가 연 정모의 목적·진행 방식
     from chatbot.profiles import nickname_block
-    return task_context() + chat_block() + nickname_block() + status_block()
+    return task_context() + chat_block() + plans_block() + nickname_block() + status_block()
 
 
 def post_prompt():

@@ -54,8 +54,11 @@ EXECUTOR_CATALOG = f"""- {{type: agent, name: chat_moca}}  모임 채팅에서 �
     spec: instruction("무엇을 알아낼지" 한 문장), deadline_hours(1~72, 기본 24). arguments_json은 null.
 - {{type: tool, name: list_events}}      정모 목록.               arguments_json: {{}}
 - {{type: tool, name: read_event}}       정모 하나의 상세.         arguments_json: {{"name": …}}
-- {{type: tool, name: create_event}}     정모 만들기.             arguments_json: {{"name", "when": "YYYY-MM-DD HH:MM", "location", "capacity"?, "expense"?}}
-- {{type: tool, name: edit_event}}       모카가 만든 정모 수정.     arguments_json: {{"name", "new_name"?, "location"?, "capacity"?, "expense"?}}
+- {{type: tool, name: create_event}}     정모 만들기.             arguments_json: {{"name", "when": "YYYY-MM-DD HH:MM", "location", "capacity"?, "expense"?,
+                                                                   "purpose", "mode": "offline"|"online"|"hybrid", "topic",
+                                                                   "format": "talk"|"discussion"|"workshop"|"cowork"|"social", "format_note"?}}
+- {{type: tool, name: edit_event}}       모카가 만든 정모의 앱 항목이나 계획 수정. arguments_json: {{"name", "new_name"?, "location"?, "capacity"?, "expense"?,
+                                                                   "purpose"?, "mode"?, "topic"?, "format"?, "format_note"?}}
 - {{type: tool, name: cancel_event}}     모카가 만든 정모 취소.     arguments_json: {{"name", "reason"}}
 - {{type: tool, name: set_attendance}}   모카 자신의 참석/취소.    arguments_json: {{"name", "attending": true|false}}
 - {{type: tool, name: list_votes}}       게시판 투표 목록.         arguments_json: {{}}
@@ -119,6 +122,9 @@ GOAL_RULES = f"""
   출처 정리, 동의 범위, 익명 처리, 결과 형식은 하네스와 채팅 모카가 알아서 하니 instruction에 쓰지 마.
 - 정모 작업은 하네스 규칙을 따른다: 모카가 만든 정모만 수정·취소, 다른 멤버가 참석한 정모는 취소 불가,
   날짜·시간은 수정 불가, 하루 {MAX_CREATES_PER_DAY}개까지 생성. 거절되면 결과에 이유가 온다.
+- 앱의 정모에는 이름·일시·장소·비용·정원밖에 없다. 정모를 만들 때는 왜 여는지(purpose), 온·오프라인(mode),
+  주제(topic), 진행 형식(format)과 진행 메모(format_note)를 계획으로 함께 남겨. 계획은 하네스가 보관하고
+  채팅 모카도 보지만, 아직 멤버에게는 보이지 않는다.
 - 투표(create_vote)는 정해진 선택지 중 멤버들의 선호를 모을 때 쓴다. 답이 열려 있는 질문은 투표가 아니라
   chat_moca로 물어라. 투표는 게시판에 남아 멤버가 아무 때나 답할 수 있으니, 여러 날에 걸친 일정·장소
   정하기에 맞다. read_vote로 누가 아직 답하지 않았는지 볼 수 있으니, 채팅으로 다시 묻기 전에 먼저 확인해.
