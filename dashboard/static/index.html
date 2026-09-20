@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>모카 대시보드</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">모카</span><span class="sub">운영 대시보드 · 개발자 전용</span></div>
+  <nav>
+    <a href="#/" data-route="goals">목표</a>
+    <a href="#/flow" data-route="flow">메시지 흐름</a>
+    <a href="#/knowledge" data-route="knowledge">지식</a>
+  </nav>
+  <div class="live" id="live"></div>
+</header>
+<section class="sessions" id="sessions"></section>
+<main id="view"><p class="muted pad">불러오는 중…</p></main>
+<script src="app.js"></script>
+</body>
+</html>

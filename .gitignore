@@ -1,0 +1,31 @@
+# secrets
+.env
+*.key
+
+# everything 모카 learned or recorded about real members and the 모임:
+# chat transcripts, 1:1 conversations, member notes and consent, board posts,
+# goals/tasks/knowledge, run logs and runtime state
+moca/data/
+
+# screenshots and step dumps from computer-use runs
+moca/runs/
+moca/experiments/astra_*/
+# test fixtures captured from the real 모임 chat (contain members' messages)
+moca/experiments/truth_font*.json
+*.png.tmp
+
+# vendored binary (download ADBKeyBoard separately)
+moca/tools/*.apk
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# editors / os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
