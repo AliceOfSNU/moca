@@ -178,6 +178,12 @@ def chat_session(args, dev, chat, store, agent, client):
         # the 내모임 list previews the latest message, so compare it with what was read
         preview, newest = chat.preview(), (store.anchor or [None])[-1]
         if preview and newest and not newest["photo"] and preview != (newest["text"], newest["time"]):
+            # some messages have no text to store — a shared post shows as '(게시글 공유)' — so a preview
+            # that a re-read already failed to match is remembered and not chased again
+            if list(preview) == store.state.get("preview_checked"):
+                return read_started
+            if not args.dry_run:
+                store.remember("preview_checked", list(preview))
             log(f"채팅을 나오는 사이 새 메시지가 온 것 같음 ({preview[0]!r}) → 다시 읽기")
             continue
         return read_started
