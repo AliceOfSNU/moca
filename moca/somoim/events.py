@@ -342,6 +342,29 @@ class SomoimEvents:
         time.sleep(2)
         return self._find_card(name) is None
 
+    def participants(self, name):
+        """Who signed up for this 정모, by name. The card shows their faces; tapping the row opens
+        '정모 참석자'. Returns [] when nobody joined (no face row at all) and None if the 정모 is gone."""
+        card = self._find_card(name)
+        if card is None:
+            return None
+        top = bounds(card["name_node"])[1]
+        faces = next((n for n in self.ui.dump().iter("node")
+                      if rid(n) == "faces_layout" and bounds(n)[1] > top), None)
+        if faces is None:
+            return []
+        self.ui.tap(faces)
+        time.sleep(2.5)
+        root = self.ui.dump()
+        if first_id(root, "title_text") is None or "참석자" not in (_text(first_id(root, "title_text")) or ""):
+            self.log(f"'{name}' 참석자 화면을 열지 못함")
+            self.ui.back()
+            return None
+        names = [_text(n) for n in root.iter("node") if rid(n) == "name_text" and _text(n)]
+        self.ui.back()
+        time.sleep(1.5)
+        return names
+
     def set_attendance(self, name, joining):
         """Tap 참석 / 참석취소 for 모카's own account. Returns True if the card ends up in the wanted state."""
         card = self._find_card(name)

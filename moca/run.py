@@ -22,9 +22,9 @@ from admin.events import sync_events
 from admin.votes import sync_votes
 from admin.goal_loop import GoalLoop
 from chatbot.config import DEVELOPER
-from harness import devmail
+from harness import devmail, stardust
 from harness.goals import focus as goals_due
-from chatbot.agent import ChatAgent, answerable, format_line, is_call, secret
+from chatbot.agent import ACCOUNT_NAME, ChatAgent, answerable, format_line, is_call, secret
 from chatbot.dm import (DMAgent, ask_memory_scope, converse, greet_newcomers, has_consented, load_consent,
                         member_dir)
 from chatbot.group_task import GroupChatTasks
@@ -97,6 +97,9 @@ def cycle(args, dev, chat, store, agent, client):
     for m in msgs:
         if is_call(m) and not store.answered(m):
             calls.setdefault(m["sender"], []).append(m)
+    if not args.dry_run:
+        for caller in calls:  # 별조각: 부른 사람에게, 하루 한도까지 (harness/stardust.py)
+            stardust.award(caller, "mention", log=log)
     if not calls:
         if not backlog:
             join_in(args, chat, store, agent, msgs)
@@ -198,6 +201,23 @@ def dm_session(args, chat, dm_agent, members, check_inbox):
                 break
 
 
+def tier_notice_session(args, chat):
+    """Tier-up messages. The system sends these, not 모카: 모카 neither grants stardust nor announces it.
+    Members who have not opened a 1:1 with 모카 are left for later — they hear it on their next turn."""
+    for member, before, now, got in stardust.tier_notices():
+        if not has_consented(member):
+            continue
+        dm = DirectChat(chat, member, log=log)
+        if not dm.open():
+            log(f"{member}님과의 1:1 대화를 열 수 없어 티어 알림 보류 (티어 {before} → {now})")
+            continue
+        log(f"티어 알림 → {member}: 티어 {before} → {now} (별조각 {got}개)")
+        sent = dm.send(stardust.notice_text(member, now, got), dry_run=args.dry_run)
+        log("  전송 완료" if sent and not args.dry_run else ("  (전송 안 함)" if args.dry_run else "  전송 실패"))
+        if sent and not args.dry_run:
+            stardust.mark_notified(member, now)
+
+
 def dev_request_session(args, chat):
     """Send what 모카 asked the harness to pass on to 로하 (harness/devmail.py). 모카 may write first
     in this one 1:1 only; everyone else has to write to 모카 first."""
@@ -244,6 +264,8 @@ def admin_session(args, chat, client, daily=False):
     if not handled:
         log("  지금 다룰 목표 없음")
     if daily:
+        log("별조각 일일 정산 (투표·정모 참여)")
+        stardust.sweep(events_ui, votes_ui, log, dry_run=args.dry_run)
         ADMIN_TICK["date"] = time.strftime("%Y-%m-%d")
         if not args.dry_run:
             save_admin_state(load_admin_state() | {"last_run": time.strftime("%Y-%m-%d %H:%M:%S")})
@@ -262,7 +284,9 @@ def post_session(args, chat, dm_agent):
     then greet the authors of 가입인사 posts."""
     full = time.time() - load_index()["last_full_sync"] >= args.post_resync
     log(f"게시판 {'전체 재동기화' if full else '새 글 확인'}")
-    sync_posts(SomoimBoard(chat), log, full=full)
+    for entry in sync_posts(SomoimBoard(chat), log, full=full):
+        if entry["author"] != ACCOUNT_NAME and not args.dry_run:
+            stardust.award(entry["author"], "post", ref=entry["path"], log=log)  # 글 하나당 한 번만
     intros = [{"author": e["author"], "title": e["listed_title"], "time": e["listed_time"]}
               for e in load_index()["posts"] if e["category"] == "가입인사" and not e["pinned"]]
     greet_newcomers(chat, dm_agent, log, dry_run=args.dry_run, posts=intros)
@@ -275,6 +299,8 @@ def session(args, dev, chat, store, agent, dm_agent, client, work):
         dm_session(args, chat, dm_agent, work["dm"], work["inbox"])
     if devmail.queued():
         dev_request_session(args, chat)
+    if stardust.tier_notices():
+        tier_notice_session(args, chat)
     if work["memory"]:
         presence.activity("memory")
         memory_session(args, chat, dm_agent)
