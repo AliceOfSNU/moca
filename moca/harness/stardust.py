@@ -167,7 +167,8 @@ def mark_notified(member, new_tier):
 
 def notice_text(member, new_tier, got):
     """The system's own message — 모카 doesn't write this and doesn't send it."""
-    return (f"[알림] 축하해요! {member}님이 별조각 {got}개를 모아 티어 {new_tier} 단계가 되었어요.\n"
+    from chatbot.profiles import call_name
+    return (f"[알림] 축하해요! {call_name(member)}님이 별조각 {got}개를 모아 티어 {new_tier} 단계가 되었어요.\n"
             "별조각은 모임 활동에 참여하면 프로그램이 자동으로 드리는 표식이에요. "
             "'/stardust'로 내 별조각과 티어를, '/stardust help'로 지급 기준을 볼 수 있어요.")
 

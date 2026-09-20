@@ -35,6 +35,8 @@ from harness.devmail import MAX_PER_DAY as MAX_DEV_REQUESTS
 from harness.devmail import GoalTools as DevTools
 from chatbot.agent import base_prompt
 from chatbot.group_task import render_summary
+from chatbot.profiles import MEMBER_TOOL, composition_block
+from chatbot.profiles import search as member_search
 from chatbot.post_tools import create_with_post_tools
 from harness import goals as G
 from harness import knowledge, tasks
@@ -82,6 +84,8 @@ GOAL_RULES = f"""
 ## 읽기 도구 (이 호출 안에서 바로 쓴다)
 - knowledge_search: 모임에 대해 쌓인 지식을 찾는다. 입력에는 지난 판단 이후 새로 생긴 지식만 보이니,
   그 전의 지식이 필요하면 직접 찾아. 결과의 이름도 운영 활용을 허락한 멤버만 보인다.
+- member_search: 멤버 자기소개(부를 이름·나이·하는 일·사는 곳·한마디)와 최근 채팅 활동을 찾는다. 입력의
+  [모임 구성]에는 최근 활동한 멤버만 이름으로 보이니, 다른 멤버가 궁금하면 직접 찾아.
 - list_posts, grep_search, read_file: 게시판 글 목록·검색·읽기.
 - 읽기 도구는 아무것도 바꾸지 않는다. 판단에 필요한 만큼 쓰고, 마지막에 next_step 하나를 골라.
 
@@ -321,7 +325,8 @@ class GoalLoop:
 
     def _decide(self, goal, reason, this_wake, since):
         resp = create_with_post_tools(
-            self.client, log=self.log, extra_tools=[KNOWLEDGE_TOOL], handlers={"knowledge_search": _knowledge_search},
+            self.client, log=self.log, extra_tools=[KNOWLEDGE_TOOL, MEMBER_TOOL],
+            handlers={"knowledge_search": _knowledge_search, "member_search": lambda query=None, **_: member_search(query)},
             model=MODEL, instructions=instructions(), input=self._input(goal, reason, this_wake, since),
             text={"format": {"type": "json_schema", "name": "next_step", "strict": True, "schema": SCHEMA}})
         return json.loads(resp.output_text)["next_step"]
@@ -345,7 +350,7 @@ class GoalLoop:
                                                     for k in new] or ["(없음)"])
         lines += [f"(저장된 지식은 모두 {len(knowledge.load_all())}건. 그 밖의 지식은 knowledge_search로 찾아.)", "",
                   "## 지금 잡혀 있는 정모", EventTools(self.events_ui, self.log).list_events(),
-                  "", "## 진행 중인 투표", open_block(), "", "다음 step 하나를 골라."]
+                  "", "## 진행 중인 투표", open_block(), "", composition_block(), "", "다음 step 하나를 골라."]
         return "\n".join(lines)
 
     @staticmethod

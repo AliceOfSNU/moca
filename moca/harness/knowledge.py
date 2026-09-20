@@ -45,9 +45,10 @@ def load_all():
 def render(record):
     """The statement as 운영 모카 may see it right now."""
     from chatbot.memory_consent import shares  # consent is read at display time, on purpose
+    from chatbot.profiles import call_name     # and so is the name they asked to be called
     text = record["statement"]
     for i, name in enumerate(record["subjects"]):
-        text = text.replace(f"{{s{i}}}", name if shares(name) else ANONYMOUS)
+        text = text.replace(f"{{s{i}}}", call_name(name) if shares(name) else ANONYMOUS)
     return text
 
 
