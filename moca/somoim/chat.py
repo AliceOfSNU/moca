@@ -173,7 +173,18 @@ class ChatScreen:
         self.ui.swipe(self.dev.width // 2, a if older else b, b if older else a)
         time.sleep(0.8)
 
+    def jump_to_bottom(self):
+        """Tapping the 채팅 tab while the chat is already open jumps straight to the newest message —
+        faster than swiping, and it doesn't stall the way a swipe can when new messages arrive mid-scroll."""
+        tab = next((n for n in by_text(self.ui.dump(), lambda t: t == "채팅") if rid(n) == "text"), None)
+        if tab is None:
+            return False
+        self.ui.tap(tab)
+        time.sleep(1.5)
+        return True
+
     def scroll_to_bottom(self, max_swipes=30):
+        self.jump_to_bottom()
         prev = None
         for _ in range(max_swipes):
             page, span = self._page()

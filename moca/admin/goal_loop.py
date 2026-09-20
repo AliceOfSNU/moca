@@ -28,6 +28,9 @@ import time
 
 from admin.agent import EventTools
 from admin.events import MAX_CREATES_PER_DAY, sync_events
+from admin.votes import MAX_CREATES_PER_DAY as MAX_VOTES_PER_DAY
+from admin.votes import MAX_OPEN as MAX_OPEN_VOTES
+from admin.votes import VOTE_TOOLS, VoteTools, open_block, sync_votes
 from chatbot.agent import base_prompt
 from chatbot.group_task import render_summary
 from chatbot.post_tools import create_with_post_tools
@@ -39,8 +42,9 @@ MAX_STEPS = 4            # steps per wake-up
 MAX_REJECTIONS = 2       # re-asks after a step the harness refused
 MAX_FOCUS_SWITCHES = 8   # goals handled in one round (a subgoal finishing hands over to its parent)
 MAX_MODIFY = 2           # modify_goals steps per wake-up (they don't count towards MAX_STEPS)
-WRITE_TOOLS = ("create_event", "edit_event", "cancel_event", "set_attendance")
-READ_TOOLS = ("list_events", "read_event")
+WRITE_TOOLS = ("create_event", "edit_event", "cancel_event", "set_attendance",
+               "create_vote", "close_vote", "delete_vote")
+READ_TOOLS = ("list_events", "read_event", "list_votes", "read_vote")
 
 EXECUTOR_CATALOG = f"""- {{type: agent, name: chat_moca}}  모임 채팅에서 멤버들에게 묻고 답을 모아 결과(요약 + 출처 있는 지식)로 돌려준다.
     spec: instruction("무엇을 알아낼지" 한 문장), deadline_hours(1~72, 기본 24). arguments_json은 null.
@@ -49,7 +53,12 @@ EXECUTOR_CATALOG = f"""- {{type: agent, name: chat_moca}}  모임 채팅에서 �
 - {{type: tool, name: create_event}}     정모 만들기.             arguments_json: {{"name", "when": "YYYY-MM-DD HH:MM", "location", "capacity"?, "expense"?}}
 - {{type: tool, name: edit_event}}       모카가 만든 정모 수정.     arguments_json: {{"name", "new_name"?, "location"?, "capacity"?, "expense"?}}
 - {{type: tool, name: cancel_event}}     모카가 만든 정모 취소.     arguments_json: {{"name", "reason"}}
-- {{type: tool, name: set_attendance}}   모카 자신의 참석/취소.    arguments_json: {{"name", "attending": true|false}}"""
+- {{type: tool, name: set_attendance}}   모카 자신의 참석/취소.    arguments_json: {{"name", "attending": true|false}}
+- {{type: tool, name: list_votes}}       게시판 투표 목록.         arguments_json: {{}}
+- {{type: tool, name: read_vote}}        투표 결과(항목별 득표·누가 골랐는지·미참여자). arguments_json: {{"title": …}}
+- {{type: tool, name: create_vote}}      투표 올리기.             arguments_json: {{"title", "options": [...], "ends_at"?: "YYYY-MM-DD HH:MM", "multi"?, "anonymous"?}}
+- {{type: tool, name: close_vote}}       모카가 올린 투표 종료.    arguments_json: {{"title": …}}
+- {{type: tool, name: delete_vote}}      모카가 올린 투표 삭제.    arguments_json: {{"title", "reason"}}"""
 
 GOAL_RULES = f"""
 
@@ -103,6 +112,11 @@ GOAL_RULES = f"""
   출처 정리, 동의 범위, 익명 처리, 결과 형식은 하네스와 채팅 모카가 알아서 하니 instruction에 쓰지 마.
 - 정모 작업은 하네스 규칙을 따른다: 모카가 만든 정모만 수정·취소, 다른 멤버가 참석한 정모는 취소 불가,
   날짜·시간은 수정 불가, 하루 {MAX_CREATES_PER_DAY}개까지 생성. 거절되면 결과에 이유가 온다.
+- 투표(create_vote)는 정해진 선택지 중 멤버들의 선호를 모을 때 쓴다. 답이 열려 있는 질문은 투표가 아니라
+  chat_moca로 물어라. 투표는 게시판에 남아 멤버가 아무 때나 답할 수 있으니, 여러 날에 걸친 일정·장소
+  정하기에 맞다. read_vote로 누가 아직 답하지 않았는지 볼 수 있으니, 채팅으로 다시 묻기 전에 먼저 확인해.
+  하네스 규칙: 모카가 올린 투표만 종료·삭제, 누군가 답한 투표는 삭제 불가(종료만), 진행 중인 모카 투표
+  {MAX_OPEN_VOTES}개·하루 {MAX_VOTES_PER_DAY}개까지.
 - 도구 작업(type: tool)은 바로 끝나고 결과가 다음 판단 때 보인다. 에이전트 작업(chat_moca)은 몇 시간이
   걸릴 수 있으니, 시작한 뒤에는 보통 그 작업을 wait한다.
 
@@ -191,9 +205,10 @@ def _next_daily(hour):
 
 
 class GoalLoop:
-    def __init__(self, client, events_ui, log, dry_run=False, daily_hour=10):
+    def __init__(self, client, events_ui, log, dry_run=False, daily_hour=10, votes_ui=None):
         self.client = client
         self.events_ui = events_ui
+        self.votes_ui = votes_ui
         self.log = log
         self.dry_run = dry_run
         self.daily_hour = daily_hour
@@ -312,7 +327,8 @@ class GoalLoop:
         lines += ["", "## 지난 판단 이후 새로 쌓인 지식"] + ([f"{knowledge.rendered_line(k)} [{k['id']}, 작업 {k['origin'].get('task')}]"
                                                     for k in new] or ["(없음)"])
         lines += [f"(저장된 지식은 모두 {len(knowledge.load_all())}건. 그 밖의 지식은 knowledge_search로 찾아.)", "",
-                  "## 지금 잡혀 있는 정모", EventTools(self.events_ui, self.log).list_events(), "", "다음 step 하나를 골라."]
+                  "## 지금 잡혀 있는 정모", EventTools(self.events_ui, self.log).list_events(),
+                  "", "## 진행 중인 투표", open_block(), "", "다음 step 하나를 골라."]
         return "\n".join(lines)
 
     @staticmethod
@@ -419,7 +435,13 @@ class GoalLoop:
             assert isinstance(arguments, dict)
         except (ValueError, AssertionError):
             return "거절", "arguments_json은 JSON 객체여야 합니다", False, {}
-        tools = EventTools(self.events_ui, self.log, agent=f"goal:{goal['id']}", dry_run=self.dry_run)
+        agent = f"goal:{goal['id']}"
+        if name in VOTE_TOOLS:
+            if self.votes_ui is None:
+                return "거절", "투표 도구를 쓸 수 없습니다 (앱 연결 없음)", False, {}
+            tools = VoteTools(self.votes_ui, self.log, agent=agent, dry_run=self.dry_run)
+        else:
+            tools = EventTools(self.events_ui, self.log, agent=agent, dry_run=self.dry_run)
 
         def run():
             try:
@@ -446,11 +468,14 @@ def main():
     from cua.android import AndroidDevice
     from somoim.chat import SomoimChat
     from somoim.events import SomoimEvents
+    from somoim.votes import SomoimVotes
     log = lambda msg: print(f"{time.strftime('%H:%M:%S')} {msg}", flush=True)
     chat = SomoimChat(AndroidDevice(scale=0.5), MOIM_NAMES, log=log)
     events_ui = SomoimEvents(chat)
+    votes_ui = SomoimVotes(chat)
     sync_events(events_ui, log)
-    handled = GoalLoop(openai_client(), events_ui, log, dry_run=args.dry_run).run()
+    sync_votes(votes_ui, log)
+    handled = GoalLoop(openai_client(), events_ui, log, dry_run=args.dry_run, votes_ui=votes_ui).run()
     log(f"다룬 목표: {handled or '없음'}")
     chat.park()
 

@@ -187,8 +187,9 @@ class SomoimEvents:
                 break
             self.ui.tap(label)  # AM/PM selector: either toggles or opens a two-item list
             time.sleep(1.2)
+            # the list items carry the same id as the spinner itself, so tell them apart by position
             option = next((n for n in self.ui.dump(windows=True).iter("node")
-                           if _text(n) == wanted and n.get("resource-id") != "android:id/text1"), None)
+                           if _text(n) == wanted and bounds(n) != bounds(label)), None)
             if option is not None:
                 self.ui.tap(option)
                 time.sleep(1.0)

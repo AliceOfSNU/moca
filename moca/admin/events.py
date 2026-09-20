@@ -120,7 +120,7 @@ def check_create(name, when, location, capacity, expense):
     if find_event(name):
         return f"'{name}' 정모가 이미 있습니다"
     if creates_today() >= MAX_CREATES_PER_DAY:
-        return f"오늘은 이미 정모를 {MAX_CREATES_PER_DAY}개 만들었습니다. 더 만들려면 모임장에게 요청하세요"
+        return f"오늘은 이미 정모를 {MAX_CREATES_PER_DAY}개 만들었습니다. 더 만들려면 로하에게 부탁하세요"
     return None
 
 
@@ -130,8 +130,8 @@ def check_change(name, deleting=False):
     if event is None:
         return f"'{name}' 정모를 찾을 수 없습니다. list_events로 이름을 확인하세요"
     if not event["mine"]:
-        return f"'{name}'은 모카가 만든 정모가 아니라 수정하거나 취소할 수 없습니다. 모임장에게 요청하세요"
+        return f"'{name}'은 모카가 만든 정모가 아니라 수정하거나 취소할 수 없습니다. 로하에게 부탁하세요"
     others = (event["joiners"] or 0) - (1 if event["attending"] else 0)
     if deleting and others > 0:
-        return f"'{name}'에 이미 {others}명이 참석 신청했습니다. 취소는 모임장에게 요청하세요"
+        return f"'{name}'에 이미 {others}명이 참석 신청했습니다. 취소는 로하에게 부탁하세요"
     return None

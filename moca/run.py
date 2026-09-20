@@ -19,6 +19,7 @@ import traceback
 
 from admin.agent import load_state as load_admin_state, save_state as save_admin_state
 from admin.events import sync_events
+from admin.votes import sync_votes
 from admin.goal_loop import GoalLoop
 from harness.goals import focus as goals_due
 from chatbot.agent import ChatAgent, answerable, format_line, is_call, secret
@@ -38,6 +39,7 @@ from cua.android import AndroidDevice
 from somoim.chat import SomoimChat
 from somoim.direct import DirectChat, inbox_rows
 from somoim.events import SomoimEvents
+from somoim.votes import SomoimVotes
 from somoim.notifications import NotificationWatcher
 
 
@@ -213,8 +215,11 @@ def admin_session(args, chat, client, daily=False):
     take its steps. `daily` is the once-a-day tick; other wake-ups come from goals whose wait is over."""
     log("운영 모카 목표 루프" + (" (매일 점검)" if daily else ""))
     events_ui = SomoimEvents(chat)
+    votes_ui = SomoimVotes(chat)
     sync_events(events_ui, log)
-    handled = GoalLoop(client, events_ui, log, dry_run=args.dry_run, daily_hour=args.admin_hour).run(daily=daily)
+    sync_votes(votes_ui, log)
+    handled = GoalLoop(client, events_ui, log, dry_run=args.dry_run, daily_hour=args.admin_hour,
+                       votes_ui=votes_ui).run(daily=daily)
     if not handled:
         log("  지금 다룰 목표 없음")
     if daily:

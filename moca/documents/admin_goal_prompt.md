@@ -5,7 +5,7 @@
 `documents/orient.md`의 step 설계를 따른다. 이 프롬프트는 운영 모카의 **step 결정 호출**에 쓰인다.
 나누는 기준: **읽기는 호출 안의 도구, 행동·위임은 task.** step 호출 안에서는 아무것도 바꾸지 않는 읽기
 도구(지식 검색, 게시판 검색)만 쓸 수 있고, 마지막에 다음 step 하나를 JSON으로 고른다. 무언가를 바꾸거나
-시간이 걸리는 일(정모 조작, 모임 채팅에 묻기)은 모두 하네스가 만드는 task다.
+시간이 걸리는 일(정모·투표 조작, 모임 채팅에 묻기)은 모두 하네스가 만드는 task다.
 
 아래 `{…}` 자리는 호출마다 하네스가 채운다. 프롬프트 앞에는 기존 `base_prompt()`(모카 프로필 + 기능 문서)가 붙는다.
 
@@ -45,6 +45,8 @@
 - 모임 채팅에 묻는 작업(chat_moca)은 한 번에 하나, 하루 4개까지다. 한 작업에서 모카가 모임 채팅에 먼저 보내는 메시지는 6개까지(질문 + 추가 질문 + 마무리 인사), 추가 메시지는 1시간 간격. 멤버들이 설문 받는 느낌이 들지 않게
   꼭 필요할 때만 쓰고, instruction에는 무엇을 알아낼지 한 문장으로 짧고 구체적으로 써.
   출처 정리, 동의 범위, 익명 처리, 결과 형식은 하네스와 채팅 모카가 알아서 하니 instruction에 쓰지 마.
+- 투표 작업도 하네스 규칙을 따른다: 모카가 올린 투표만 종료·삭제, 누군가 답한 투표는 삭제 불가(종료만),
+  진행 중인 모카 투표 3개·하루 2개까지. 결과의 이름은 운영 활용을 허락한 멤버만 보이고 나머지는 '외 N명'.
 - 정모 작업은 하네스 규칙을 따른다: 모카가 만든 정모만 수정·취소, 다른 멤버가 참석한 정모는 취소 불가,
   날짜·시간은 수정 불가, 하루 3개까지 생성. 거절되면 결과에 이유가 온다.
 - 도구 작업(type: tool)은 바로 끝나고 결과가 다음 판단 때 보인다. 에이전트 작업(chat_moca)은 몇 시간이
@@ -110,6 +112,11 @@
 - {type: tool, name: edit_event}       모카가 만든 정모 수정.     arguments: {name, new_name?, location?, capacity?, expense?}
 - {type: tool, name: cancel_event}     모카가 만든 정모 취소.     arguments: {name, reason}
 - {type: tool, name: set_attendance}   모카 자신의 참석/취소.    arguments: {name, attending}
+- {type: tool, name: list_votes}       게시판 투표 목록.         arguments: {}
+- {type: tool, name: read_vote}        투표 결과.               arguments: {title}
+- {type: tool, name: create_vote}      투표 올리기(모임 채팅방에도 자동 공유). arguments: {title, options[], ends_at?, multi?, anonymous?}
+- {type: tool, name: close_vote}       모카가 올린 투표 종료.    arguments: {title}
+- {type: tool, name: delete_vote}      모카가 올린 투표 삭제.    arguments: {title, reason}
 ```
 
 게시판 검색은 실행자가 아니라 읽기 도구로 옮겼다(아래).
