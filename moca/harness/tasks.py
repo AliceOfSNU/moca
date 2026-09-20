@@ -126,6 +126,41 @@ def create_group_chat_task(instruction, hours=DEFAULT_HOURS, created_by="admin",
     return task, None
 
 
+VOTE_WATCHER = {"type": "watcher", "name": "vote"}
+
+
+def is_vote(task):
+    return task["spec"]["executor"] == VOTE_WATCHER
+
+
+def vote_tasks(statuses=OPEN):
+    return [t for t in all_tasks() if is_vote(t) and t["status"] in statuses]
+
+
+def open_tasks():
+    """Everything 운영 모카 may still be waiting on."""
+    return group_chat_tasks() + vote_tasks()
+
+
+def vote_due():
+    """Open vote watchers whose vote should be over by now — the harness has results to collect."""
+    return [t for t in vote_tasks(("running",)) if deadline_passed(t)]
+
+
+def create_vote_task(title, deadline, goal_id=None, created_by="harness"):
+    """Watch a vote 모카 just posted. Unlike a tool task this one stays open, so a goal can wait on it:
+    when the vote closes, the harness finishes it with the tally (admin/votes.py: finish_vote_tasks)."""
+    created = dt.datetime.now()
+    task = {"id": f"t_{created:%Y%m%d_%H%M}_{secrets.token_hex(2)}",
+            "spec": {"executor": dict(VOTE_WATCHER), "target": {"vote": title},
+                     "instruction": f"투표 '{title}'의 결과를 기다린다"},
+            "status": "running", "result": None, "created_by": created_by, "goal_id": goal_id,
+            "created_at": created.strftime(FMT), "deadline": deadline, "run": {"started_at": created.strftime(FMT)}}
+    save(task)
+    _log("created", task, created_by=created_by, deadline=deadline, goal_id=goal_id, vote=title)
+    return task
+
+
 def run_tool_task(goal_id, name, arguments, run):
     """A tool task runs at once, so it never needs a file: create, run, log, done.
     `run()` returns (ok, result text). Returns (task_id, status, result text)."""

@@ -120,6 +120,8 @@ GOAL_RULES = f"""
   정하기에 맞다. read_vote로 누가 아직 답하지 않았는지 볼 수 있으니, 채팅으로 다시 묻기 전에 먼저 확인해.
   하네스 규칙: 모카가 올린 투표만 종료·삭제, 누군가 답한 투표는 삭제 불가(종료만), 진행 중인 모카 투표
   {MAX_OPEN_VOTES}개·하루 {MAX_VOTES_PER_DAY}개까지.
+- 투표를 올리면 하네스가 '결과를 기다리는 작업'을 하나 열어 주고 그 id를 알려 준다. 그 작업을 wait하면
+  투표가 끝났을 때 항목별 집계와 함께 깨워 준다. 투표를 열어 놓고 목표를 닫지 마.
 - 네가 할 수 없는 일이 목표에 필요하면 포기하기 전에 ask_developer로 하네스에 무엇이 필요한지 적어 보내라.
   하루 {MAX_DEV_REQUESTS}건까지고, 답은 로하가 1:1로 보내온다. 멤버에게는 아직 없는 기능을 약속하지 마.
 - 도구 작업(type: tool)은 바로 끝나고 결과가 다음 판단 때 보인다. 에이전트 작업(chat_moca)은 몇 시간이
@@ -207,6 +209,16 @@ def _next_daily(hour):
     now = dt.datetime.now()
     tick = now.replace(hour=hour, minute=0, second=0, microsecond=0)
     return (tick if tick > now else tick + dt.timedelta(days=1)).strftime(tasks.FMT)
+
+
+def _vote_deadline(ends_at):
+    """When the harness should collect the tally: a little past the vote's end. Without an explicit end
+    the app closes it two days out at 00:30 (somoim/votes.py), so allow for that."""
+    try:
+        end = dt.datetime.strptime(ends_at, "%Y-%m-%d %H:%M")
+    except (TypeError, ValueError):
+        end = (dt.datetime.now() + dt.timedelta(days=2)).replace(hour=0, minute=30) + dt.timedelta(days=1)
+    return (end + dt.timedelta(minutes=20)).strftime(tasks.FMT)
 
 
 class GoalLoop:
@@ -326,7 +338,7 @@ class GoalLoop:
                 st = s["step"]
                 lines.append(f"- {st['kind']} ({st['reason']}) → {s['verdict']}{': ' + s['note'] if s['note'] else ''}")
             lines.append("")
-        open_ = tasks.group_chat_tasks()
+        open_ = tasks.open_tasks()
         lines += ["## 진행 중인 작업"] + ([f"- {t['id']} [{t['status']}] {t['spec']['instruction']} (목표 {t.get('goal_id')}, 마감 {t['deadline']})"
                                      for t in open_] or ["(없음)"])
         lines += ["", "## 지난 판단 이후 새로 쌓인 지식"] + ([f"{knowledge.rendered_line(k)} [{k['id']}, 작업 {k['origin'].get('task')}]"
@@ -462,6 +474,15 @@ class GoalLoop:
         if self.dry_run and name in WRITE_TOOLS:
             return "실행 안 함(dry-run)", f"{name} {arguments}", True, {}
         task_id, status, result = tasks.run_tool_task(goal["id"], name, arguments, run)
+        if name == "create_vote" and status == "succeeded":
+            # 투표를 올리는 것은 한순간이지만 답이 모이는 데는 시간이 걸린다. 결과를 기다리는 작업을 하나 열어 두면
+            # 목표가 그 작업을 wait할 수 있고, 마감 때 하네스가 집계를 들고 모카를 깨운다.
+            watcher = tasks.create_vote_task(arguments.get("title"), _vote_deadline(arguments.get("ends_at")),
+                                             goal_id=goal["id"], created_by=f"goal:{goal['id']}")
+            self.log(f"  투표 결과 대기 작업 생성: {watcher['id']} (마감 {watcher['deadline']})")
+            return "완료", (f"작업 {task_id}: {result[:300]}\n"
+                          f"결과를 기다리는 작업 {watcher['id']}를 열었습니다 (마감 {watcher['deadline']}). "
+                          "투표가 끝나면 집계와 함께 깨워 드리니, 이 작업을 wait하세요."), False, {"task_id": watcher["id"]}
         return ("완료" if status == "succeeded" else "실패"), f"작업 {task_id}: {result[:400]}", False, {"task_id": task_id}
 
 

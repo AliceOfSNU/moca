@@ -183,6 +183,66 @@ def check_change(vote, title, deleting=False):
     return None
 
 
+def _eul(word):
+    """'을' or '를', by whether the last syllable has a final consonant. Korean 조사 must match the word,
+    and an option name is whatever 모카 typed."""
+    last = (word or "")[-1:]
+    if "가" <= last <= "힣":
+        return "을" if (ord(last) - 0xAC00) % 28 else "를"
+    return "을"
+
+
+def vote_result(vote, title):
+    """Turn a closed vote into a task result, in the shape a Group Chat Task result has
+    (chatbot/group_task.py: validate). Voters are stored as subjects and shown by each member's
+    현재 활용 범위 at display time (harness/knowledge.py), like every other record."""
+    counted = [o for o in vote["options"] if o["votes"]]
+    tally = ", ".join(f"{o['name']} {o['votes']}표" for o in vote["options"])
+    summary = f"투표 '{title}' 종료: {tally}. 참여 {vote['participants']}명."
+    if not counted:
+        return {"outcome": "no_shareable_answer", "summary": summary + " 아무도 답하지 않았다.",
+                "summary_subjects": [], "knowledge": []}
+    records = [{"statement": f"투표 '{title}' 결과: {tally} (참여 {vote['participants']}명).",
+                "subjects": [], "basis": "reported", "source_refs": [f"vote:{title}"]}]
+    for option in counted:
+        for name in option["voters"]:  # 익명투표면 voters가 비어 있어 집계만 남는다
+            # '{s0}님이' 로 쓰는 이유: 이름이 가려지면 '한 멤버'로 바뀌어서, 이름 뒤 조사를 미리 정할 수 없다
+            records.append({"statement": f"{{s0}}님이 투표 '{title}'에서 "
+                                         f"'{option['name']}'{_eul(option['name'])} 골랐다.",
+                            "subjects": [name], "basis": "reported", "source_refs": [f"vote:{title}"]})
+    return {"outcome": "answer_available" if len(records) > 1 else "partial_answer", "summary": summary,
+            "summary_subjects": [], "knowledge": records}
+
+
+def finish_vote_tasks(votes_ui, log, dry_run=False):
+    """Close out vote watchers whose vote is over: read the results once, record them, finish the task.
+    Runs before 운영 모카's round, so a goal waiting on a vote wakes up with the tally in hand."""
+    from harness import knowledge, tasks
+    index = {v["title"]: v for v in load_index()["votes"]}
+    for task in tasks.vote_tasks(("running",)):
+        title = task["spec"]["target"]["vote"]
+        card = index.get(title)
+        if not tasks.deadline_passed(task) and not (card and is_closed(card)):
+            continue  # 아직 진행 중
+        vote = votes_ui.read(title)
+        if vote is None:
+            log(f"투표 '{title}'를 읽지 못해 결과 정리를 미룸")
+            continue
+        if not vote["closed"] and not tasks.deadline_passed(task):
+            continue
+        result = vote_result(vote, title)
+        log(f"투표 작업 {task['id']} 마감: {result['summary']}")
+        if dry_run:
+            continue
+        origin = {"task": task["id"], "channel": "vote"}
+        result["knowledge"] = [{"id": knowledge.add(k["statement"], k["subjects"], k["basis"],
+                                                    k["source_refs"], origin)["id"], **k}
+                               for k in result["knowledge"]]
+        for k in result["knowledge"]:
+            log(f"  지식 {k['id']}: {knowledge.render(k)}")
+        tasks.finish(task, result, how="vote_closed")
+
+
 class VoteTools:
     """투표 tools. Every write goes through the rules above, then the app, then the log."""
 

@@ -19,10 +19,10 @@ import traceback
 
 from admin.agent import load_state as load_admin_state, save_state as save_admin_state
 from admin.events import sync_events
-from admin.votes import sync_votes
+from admin.votes import finish_vote_tasks, sync_votes
 from admin.goal_loop import GoalLoop
 from chatbot.config import DEVELOPER
-from harness import devmail, stardust
+from harness import devmail, stardust, tasks
 from harness.goals import focus as goals_due
 from chatbot.agent import ACCOUNT_NAME, ChatAgent, answerable, format_line, is_call, secret
 from chatbot.dm import (DMAgent, ask_memory_scope, converse, greet_newcomers, has_consented, load_consent,
@@ -265,6 +265,7 @@ def admin_session(args, chat, client, daily=False):
     votes_ui = SomoimVotes(chat)
     sync_events(events_ui, log)
     sync_votes(votes_ui, log)
+    finish_vote_tasks(votes_ui, log, dry_run=args.dry_run)  # 끝난 투표의 집계를 먼저 걷어 온다
     handled = GoalLoop(client, events_ui, log, dry_run=args.dry_run, daily_hour=args.admin_hour,
                        votes_ui=votes_ui).run(daily=daily)
     if not handled:
@@ -380,7 +381,8 @@ def wait_for_trigger(args, watcher, chat, last_cycle):
         if admin_due(args):
             return "운영 점검 시각", dict(no_work(), admin=True, daily=True)
         # a goal whose wait is over (its task finished), or that has not taken a step yet
-        if not args.dry_run and not args.no_admin and goals_due() and time.time() - last_cycle >= args.min_gap:
+        if (not args.dry_run and not args.no_admin and (goals_due() or tasks.vote_due())
+                and time.time() - last_cycle >= args.min_gap):
             return "목표 진행", dict(no_work(), admin=True)
         remaining = last_cycle + args.fallback - time.time()
         if remaining <= 0:
