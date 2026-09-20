@@ -104,7 +104,8 @@ def creates_today():
     today = time.strftime("%Y-%m-%d")
     return sum(1 for line in ACTIONS.read_text(encoding="utf-8").splitlines()
                if line.strip() and (a := json.loads(line))["action"] == "create_vote"
-               and a["result"] == "ok" and a["at"].startswith(today))
+               and a["result"] == "ok" and a["at"].startswith(today)
+               and not a["agent"].startswith("test"))  # 개발 중 테스트는 모카의 하루치를 쓰지 않는다
 
 
 def is_mine(vote):
