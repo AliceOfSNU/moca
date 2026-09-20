@@ -7,6 +7,9 @@ MOIM_NAMES = [
 ]
 MOIM_NAME = MOIM_NAMES[0]
 
+# 모카를 만든 개발자이자 앱 계정상의 모임장. 모카가 먼저 1:1을 쓸 수 있는 유일한 상대.
+DEVELOPER = "로하"
+
 
 def same_name(a, b):
     """Compare 모임 names ignoring emoji variation selectors, which differ between screens and notifications."""

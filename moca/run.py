@@ -21,6 +21,8 @@ from admin.agent import load_state as load_admin_state, save_state as save_admin
 from admin.events import sync_events
 from admin.votes import sync_votes
 from admin.goal_loop import GoalLoop
+from chatbot.config import DEVELOPER
+from harness import devmail
 from harness.goals import focus as goals_due
 from chatbot.agent import ChatAgent, answerable, format_line, is_call, secret
 from chatbot.dm import (DMAgent, ask_memory_scope, converse, greet_newcomers, has_consented, load_consent,
@@ -196,6 +198,25 @@ def dm_session(args, chat, dm_agent, members, check_inbox):
                 break
 
 
+def dev_request_session(args, chat):
+    """Send what 모카 asked the harness to pass on to 로하 (harness/devmail.py). 모카 may write first
+    in this one 1:1 only; everyone else has to write to 모카 first."""
+    pending = devmail.queued()
+    if not pending:
+        return
+    dm = DirectChat(chat, DEVELOPER, log=log)
+    if not dm.open():
+        log(f"{DEVELOPER}님과의 1:1 대화를 열 수 없어 개발자 요청 {len(pending)}건을 보류")
+        return
+    for record in pending:
+        text = devmail.message(record)
+        log(f"개발자 요청 전달 ({record['id']}, {record['kind']}): {record['text'][:60]}")
+        sent = dm.send(text, dry_run=args.dry_run)
+        log("  전송 완료" if sent and not args.dry_run else ("  (전송 안 함)" if args.dry_run else "  전송 실패"))
+        if not args.dry_run:
+            devmail.mark(record["id"], bool(sent))
+
+
 def memory_session(args, chat, dm_agent):
     """Ask members, the morning after they entered the 1:1, what 모카 may use what it remembers for
     (documents/personal_intelligence.md 3). Their answer is read on their next 1:1 turn."""
@@ -252,6 +273,8 @@ def session(args, dev, chat, store, agent, dm_agent, client, work):
     if work["dm"] or work["inbox"]:
         presence.activity("dm", members=sorted(work["dm"]), inbox=work["inbox"])
         dm_session(args, chat, dm_agent, work["dm"], work["inbox"])
+    if devmail.queued():
+        dev_request_session(args, chat)
     if work["memory"]:
         presence.activity("memory")
         memory_session(args, chat, dm_agent)

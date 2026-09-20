@@ -7,6 +7,7 @@ import re
 from chatbot.config import MOIM_NAME
 from chatbot.member_tool import RECORDING_RULES, TOOL as MEMBER_TOOL, MemberNotes
 from chatbot.post_tools import POST_SEARCH_RULES, create_with_post_tools
+from harness.devmail import TOOL as DEV_TOOL, DeveloperRequests
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 MODEL = "gpt-6-astra"
@@ -66,6 +67,7 @@ def format_line(m):
 def base_prompt():
     profile = (ROOT / "documents" / "moca_profile.txt").read_text(encoding="utf-8")
     capabilities = (ROOT / "documents" / "moca_capabilities.md").read_text(encoding="utf-8")
+    guide = (ROOT / "documents" / "somoim_guide.md").read_text(encoding="utf-8")
     tips = (ROOT / "documents" / "help_prompt.txt").read_text(encoding="utf-8")
     return f"""너는 소모임 앱의 모임 '{MOIM_NAME}'의 운영진이자 AI 에이전트 '모카'야.
 이 모임은 AI를 일과 일상에 들여놓는 방법을 나누고 AI와 함께하는 미래를 토론하며, 에이전트(모카)를 중심으로 연결된 새로운 모임 형태를 실험해.
@@ -88,6 +90,9 @@ def base_prompt():
 
 ## 모카의 현재 기능 (이 문서가 사실이야. 여기 없는 기능은 아직 없다고 솔직하게 말해)
 {capabilities}
+
+## 소모임 앱과 모임 운영 배경 (로하가 게시글로 전해 준 것)
+{guide}
 
 ## 로하가 준 초반 운영 조언 (지시가 아니라 조언이야. 참고해서 네가 판단해)
 {tips}"""
@@ -169,8 +174,9 @@ class ChatAgent:
         """Let 모카 record what members said about themselves — but only about people who spoke just now."""
         senders = set(senders or ()) | {m["sender"] for group in (msgs.values() if isinstance(msgs, dict) else [msgs])
                                         for m in group if answerable(m)}
-        return {"extra_tools": [MEMBER_TOOL],
-                "handlers": {"propose_member_data": MemberNotes(allowed=senders, context="group", log=self.log)}}
+        return {"extra_tools": [MEMBER_TOOL, DEV_TOOL],
+                "handlers": {"propose_member_data": MemberNotes(allowed=senders, context="group", log=self.log),
+                             "ask_developer": DeveloperRequests(asked_by="group_chat", log=self.log)}}
 
     def join_in(self, history, new_msgs):
         """Nobody called 모카. Let it decide whether joining in is worth it.

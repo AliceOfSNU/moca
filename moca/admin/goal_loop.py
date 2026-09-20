@@ -31,6 +31,8 @@ from admin.events import MAX_CREATES_PER_DAY, sync_events
 from admin.votes import MAX_CREATES_PER_DAY as MAX_VOTES_PER_DAY
 from admin.votes import MAX_OPEN as MAX_OPEN_VOTES
 from admin.votes import VOTE_TOOLS, VoteTools, open_block, sync_votes
+from harness.devmail import MAX_PER_DAY as MAX_DEV_REQUESTS
+from harness.devmail import GoalTools as DevTools
 from chatbot.agent import base_prompt
 from chatbot.group_task import render_summary
 from chatbot.post_tools import create_with_post_tools
@@ -43,7 +45,7 @@ MAX_REJECTIONS = 2       # re-asks after a step the harness refused
 MAX_FOCUS_SWITCHES = 8   # goals handled in one round (a subgoal finishing hands over to its parent)
 MAX_MODIFY = 2           # modify_goals steps per wake-up (they don't count towards MAX_STEPS)
 WRITE_TOOLS = ("create_event", "edit_event", "cancel_event", "set_attendance",
-               "create_vote", "close_vote", "delete_vote")
+               "create_vote", "close_vote", "delete_vote", "ask_developer")
 READ_TOOLS = ("list_events", "read_event", "list_votes", "read_vote")
 
 EXECUTOR_CATALOG = f"""- {{type: agent, name: chat_moca}}  모임 채팅에서 멤버들에게 묻고 답을 모아 결과(요약 + 출처 있는 지식)로 돌려준다.
@@ -58,7 +60,8 @@ EXECUTOR_CATALOG = f"""- {{type: agent, name: chat_moca}}  모임 채팅에서 �
 - {{type: tool, name: read_vote}}        투표 결과(항목별 득표·누가 골랐는지·미참여자). arguments_json: {{"title": …}}
 - {{type: tool, name: create_vote}}      투표 올리기.             arguments_json: {{"title", "options": [...], "ends_at"?: "YYYY-MM-DD HH:MM", "multi"?, "anonymous"?}}
 - {{type: tool, name: close_vote}}       모카가 올린 투표 종료.    arguments_json: {{"title": …}}
-- {{type: tool, name: delete_vote}}      모카가 올린 투표 삭제.    arguments_json: {{"title", "reason"}}"""
+- {{type: tool, name: delete_vote}}      모카가 올린 투표 삭제.    arguments_json: {{"title", "reason"}}
+- {{type: tool, name: ask_developer}}    개발자 로하에게 하네스 변경을 1:1로 요청. arguments_json: {{"text", "kind": "feature"|"limit"|"bug"|"question", "why"?}}"""
 
 GOAL_RULES = f"""
 
@@ -117,6 +120,8 @@ GOAL_RULES = f"""
   정하기에 맞다. read_vote로 누가 아직 답하지 않았는지 볼 수 있으니, 채팅으로 다시 묻기 전에 먼저 확인해.
   하네스 규칙: 모카가 올린 투표만 종료·삭제, 누군가 답한 투표는 삭제 불가(종료만), 진행 중인 모카 투표
   {MAX_OPEN_VOTES}개·하루 {MAX_VOTES_PER_DAY}개까지.
+- 네가 할 수 없는 일이 목표에 필요하면 포기하기 전에 ask_developer로 하네스에 무엇이 필요한지 적어 보내라.
+  하루 {MAX_DEV_REQUESTS}건까지고, 답은 로하가 1:1로 보내온다. 멤버에게는 아직 없는 기능을 약속하지 마.
 - 도구 작업(type: tool)은 바로 끝나고 결과가 다음 판단 때 보인다. 에이전트 작업(chat_moca)은 몇 시간이
   걸릴 수 있으니, 시작한 뒤에는 보통 그 작업을 wait한다.
 
@@ -436,7 +441,9 @@ class GoalLoop:
         except (ValueError, AssertionError):
             return "거절", "arguments_json은 JSON 객체여야 합니다", False, {}
         agent = f"goal:{goal['id']}"
-        if name in VOTE_TOOLS:
+        if name == "ask_developer":
+            tools = DevTools(self.log, agent=agent, dry_run=self.dry_run)
+        elif name in VOTE_TOOLS:
             if self.votes_ui is None:
                 return "거절", "투표 도구를 쓸 수 없습니다 (앱 연결 없음)", False, {}
             tools = VoteTools(self.votes_ui, self.log, agent=agent, dry_run=self.dry_run)

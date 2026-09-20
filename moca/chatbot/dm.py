@@ -21,6 +21,7 @@ from chatbot.memory_consent import (ask_prompt, awaiting, classify, due, mark_as
                                     parse_command, set_sharing, shares)
 from chatbot.post_tools import POST_SEARCH_RULES, create_with_post_tools
 from chatbot.store import ROOT, ChatStore
+from harness.devmail import TOOL as DEV_TOOL, DeveloperRequests
 from harness.presence import status_block
 from cua.agent import openai_client
 from cua.android import AndroidDevice
@@ -97,8 +98,9 @@ class DMAgent:
             prompt += f"\n\n참고: {note}"
         prompt += f"\n\n마지막 메시지들에 이어서 '{member}'님에게 보낼 답장 하나만 써. 답장 텍스트만 출력해."
         resp = create_with_post_tools(self.client, log=self.log, tools=[{"type": "web_search"}],
-                                      extra_tools=[MEMBER_TOOL],
-                                      handlers={"propose_member_data": MemberNotes(member=member, context="dm", log=self.log)},
+                                      extra_tools=[MEMBER_TOOL, DEV_TOOL],
+                                      handlers={"propose_member_data": MemberNotes(member=member, context="dm", log=self.log),
+                                                "ask_developer": DeveloperRequests(asked_by=f"dm:{member}", log=self.log)},
                                       model=self.model, instructions=dm_prompt(member), input=prompt)
         return plain_text(resp.output_text)
 
