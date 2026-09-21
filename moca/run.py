@@ -32,7 +32,7 @@ from chatbot.memory_consent import due as scope_due
 from harness import presence
 from harness.tasks import needs_chat as task_needs_chat
 from somoim.ui import SomoimUI
-from chatbot.posts import load_index, sync_posts
+from chatbot.posts import SECRET_PREFIX, load_index, sync_posts
 from somoim.board import SomoimBoard
 from chatbot.config import MOIM_NAME, MOIM_NAMES, same_name
 from chatbot.store import DATA, ChatStore
@@ -365,7 +365,9 @@ def add_work(work, event):
         return False
     # a member's 1:1 messages stay out of the log until they agree to the 1:1 notice
     text = event["text"] if kind != "dm" or has_consented(detail) else "(동의 전 1:1 메시지 — 내용 기록 안 함)"
-    log(f"알림 [{kind}] {event['title']}: {text}")
+    # a 비밀글's title and first lines ride along in its notification; don't let them into the log
+    shown = "(비밀글 알림 — 내용은 기록하지 않음)" if kind == "post" and SECRET_PREFIX in text else text
+    log(f"알림 [{kind}] {event['title']}: {shown}")
     if kind == "dm":
         work["dm"].add(detail)
     else:

@@ -24,7 +24,7 @@ import json
 import sys
 
 from chatbot.agent import ACCOUNT_NAME, MODEL
-from chatbot.posts import load_index, stored_body
+from chatbot.posts import is_secret, load_index, stored_body
 from harness import knowledge
 
 SKIP_CATEGORIES = ("가입인사", "투표")
@@ -70,7 +70,7 @@ SCHEMA = {"type": "object", "additionalProperties": False, "required": ["facts"]
 
 def eligible(entry):
     return (entry["category"] not in SKIP_CATEGORIES and entry["author"] != ACCOUNT_NAME
-            and not entry["title"].lstrip().startswith("[테스트]"))
+            and not entry["title"].lstrip().startswith("[테스트]") and not is_secret(entry["title"]))
 
 
 def _group(entry_or_path):

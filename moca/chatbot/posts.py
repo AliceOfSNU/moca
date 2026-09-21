@@ -144,6 +144,26 @@ def save_post(index, card, post):
 
 # --- syncing ---------------------------------------------------------------------------
 
+SECRET_PREFIX = "비밀글)"
+
+
+def is_secret(title):
+    """A post hidden from 모카 by starting its title with '비밀글)'. Like '/secret' in the chat, the harness
+    never opens it, never stores it, and no model ever sees it — members still see it on the board as usual."""
+    return (title or "").lstrip().startswith(SECRET_PREFIX)
+
+
+def unsecret(title):
+    return (title or "").lstrip()[len(SECRET_PREFIX):].strip()
+
+
+def _forget(index, entry):
+    """Drop a saved post: its index entry, and its file unless another entry uses the same one."""
+    index["posts"].remove(entry)
+    if not any(e["path"] == entry["path"] for e in index["posts"]):
+        (BOARD / entry["path"]).unlink(missing_ok=True)
+
+
 def sync_posts(board, log, full=False):
     """Save posts not saved yet. `full` also re-reads posts that look edited and drops deleted ones.
     Returns the entries that were newly saved or updated."""
@@ -158,6 +178,16 @@ def sync_posts(board, log, full=False):
     if cards is None:
         log("게시판 목록을 읽지 못함")
         return []
+    # 비밀글: never opened, never stored. A post hidden after it was saved is forgotten right away.
+    hidden = [c for c in cards if is_secret(c["title"])]
+    cards = [c for c in cards if not is_secret(c["title"])]
+    for card in hidden:
+        entry = find_entry(index, {**card, "title": unsecret(card["title"])})
+        if entry is not None:
+            _forget(index, entry)
+            log(f"  비밀글이 된 게시글을 지움: [{entry['category']}] {entry['title']}")
+    if hidden:
+        save_index(index)
     changed = []
     for card in cards:
         entry = find_entry(index, card)
@@ -180,9 +210,7 @@ def sync_posts(board, log, full=False):
     if full:
         listed = [find_entry(index, c) for c in cards]
         for entry in [e for e in index["posts"] if not any(e is l for l in listed)]:
-            index["posts"].remove(entry)
-            if not any(e["path"] == entry["path"] for e in index["posts"]):  # never delete a file another entry uses
-                (BOARD / entry["path"]).unlink(missing_ok=True)
+            _forget(index, entry)
             log(f"  삭제된 게시글 제거: {entry['title']}")
         index["last_full_sync"] = time.time()
         save_index(index)

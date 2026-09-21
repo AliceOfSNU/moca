@@ -7,7 +7,7 @@ import json
 import re
 from pathlib import Path
 
-from chatbot.posts import BOARD, load_index
+from chatbot.posts import BOARD, is_secret, load_index
 
 FULL_READ_LINE_LIMIT = 150
 MAX_OUTPUT = 8000
@@ -87,7 +87,8 @@ def _truncate(text):
 
 
 def list_posts(category=None, author=None):
-    posts = sorted(load_index()["posts"], key=lambda e: (not e["pinned"], e["time"]), reverse=False)
+    posts = sorted((e for e in load_index()["posts"] if not is_secret(e["title"])),  # 비밀글은 저장도 안 되지만, 혹시라도
+                   key=lambda e: (not e["pinned"], e["time"]), reverse=False)
     posts = [e for e in posts if (not category or category in e["category"]) and (not author or author == e["author"])]
     if not posts:
         return "조건에 맞는 게시글이 없습니다."
@@ -105,7 +106,8 @@ def grep_search(pattern, path=".", context=2):
         regex = re.compile(pattern, re.IGNORECASE)
     except re.error as e:
         raise ValueError(f"정규식 오류: {e}")
-    files = [base] if base.is_file() else sorted(base.rglob("*.md"))
+    readable = _readable()
+    files = [f for f in ([base] if base.is_file() else sorted(base.rglob("*.md"))) if f.resolve() in readable]
     blocks = []
     for p in files:
         lines = p.read_text(encoding="utf-8").split("\n")
@@ -124,8 +126,16 @@ def grep_search(pattern, path=".", context=2):
     return _truncate(("\n\n" if context > 0 else "\n").join(blocks))
 
 
+def _readable():
+    """The files 모카 may open: saved posts in the index, never a 비밀글 and never anything else in the folder
+    (the index itself, old backups of it)."""
+    return {(BOARD / e["path"]).resolve() for e in load_index()["posts"] if not is_secret(e["title"])}
+
+
 def read_file(path, start_line=None, end_line=None):
     p = _resolve(path)
+    if p.is_file() and p not in _readable():
+        raise ValueError(f"읽을 수 있는 게시글이 아닙니다: {path} (list_posts로 경로를 확인하세요)")
     if not p.is_file():
         raise ValueError(f"파일이 없습니다: {path} (list_posts로 경로를 확인하세요)")
     lines = p.read_text(encoding="utf-8").split("\n")
