@@ -150,3 +150,20 @@ th { font-size: 12px; color: var(--muted); cursor: pointer; white-space: nowrap;
 td.mono { font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
 .empty { color: var(--muted); padding: 12px 0; }
 .table-wrap { overflow-x: auto; }
+
+/* hypotheses */
+.s-open { background: var(--gray-bg); color: var(--gray); }
+.s-supported, .s-confirmed { background: var(--green-bg); color: var(--green); }
+.s-weakened { background: var(--amber-bg); color: var(--amber); }
+.s-refuted { background: var(--red-bg); color: var(--red); }
+select { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; }
+.checks { max-height: 180px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; }
+form label.check { display: flex; gap: 8px; align-items: baseline; font-weight: 400; margin: 4px 0; font-size: 13px; }
+.hypo-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; background: var(--panel); }
+.hypo-card.dim { opacity: .55; }
+.hypo-card .row { display: flex; gap: 8px; align-items: flex-start; justify-content: space-between; }
+.hypo-card .obj { font-weight: 600; }
+.hypo-card .tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.tag { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--gray-bg); color: var(--ink); }
+.hypo-line { font-size: 13px; margin-top: 6px; }
+.cites { margin: 4px 0 0; padding-left: 18px; font-size: 12px; color: var(--muted); }

@@ -155,9 +155,13 @@ def line(h):
     if h["votes"]:
         about.append("투표 " + ", ".join(h["votes"]))
     conf = f", 확신 {CONFIDENCE[h['confidence']]}" if h.get("confidence") else ""
+    # a hypothesis seeded from the dashboard rests on 로하's own observation, not on anything 모카 recorded
+    who = "로하가 세움 · " if h["grounds"].get("source") == "developer" else ""
+    reasoning = h["grounds"].get("reasoning") or ""
     return (f"- {h['id']} [{KINDS[h['kind']]} · {STATUSES[h['status']]}{conf}] {render(h)}"
             + (f" ({'; '.join(about)})" if about else "")
-            + f"\n  근거: 지식 {len(h['grounds']['knowledge'])}건 · 확인 방법: {h['test']}")
+            + f"\n  {who}근거: 지식 {len(h['grounds']['knowledge'])}건 — {reasoning[:120]}"
+            + f"\n  확인 방법: {h['test']}")
 
 
 def block():

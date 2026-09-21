@@ -35,7 +35,8 @@ function displayStatus(g) {
   return g.status;
 }
 const statusLabel = { active: "진행 중", waiting: "대기", achieved: "달성", closed: "닫힘", cooldown: "쉬는 중",
-  queued: "대기열", running: "진행 중", succeeded: "성공", failed: "실패", unknown: "?" };
+  queued: "대기열", running: "진행 중", succeeded: "성공", failed: "실패", unknown: "?",
+  open: "검증 전", supported: "뒷받침됨", confirmed: "충분히 뒷받침됨", weakened: "약해짐", refuted: "폐기" };
 const chip = (s) => `<span class="chip s-${esc(s)}">${esc(statusLabel[s] || s)}</span>`;
 
 // the goal the harness would pick next in a tree (same rule as moca's harness/goals.py: focus)
@@ -276,6 +277,108 @@ function renderKnowledge() {
   if (sort) sort.onclick = () => { ui.knowledgeDesc = !ui.knowledgeDesc; render(); };
 }
 
+// --- view: hypotheses (seeding form + list) ------------------------------------------------------
+const confLabel = { low: "낮음", medium: "보통", high: "높음" };
+
+function hypoDraft() {
+  ui.hypoDraft = ui.hypoDraft || { claim: "", kind: "need", members: "", knowledge_ids: [], events: [], votes: [], reasoning: "", test: "" };
+  return ui.hypoDraft;
+}
+
+function hypoBody(d) {
+  return { claim: d.claim, kind: d.kind, members: d.members.split(",").map((m) => m.trim()).filter(Boolean),
+    knowledge_ids: d.knowledge_ids, events: d.events, votes: d.votes, reasoning: d.reasoning, test: d.test };
+}
+
+function renderHypotheses() {
+  const O = S.hypothesis_options;
+  const d = hypoDraft();
+  const L = O.limits;
+  const checks = (field, items, label) => items.length ? `<label>${label}</label><div class="checks">${items.map((it) => {
+    const value = typeof it === "string" ? it : it.id;
+    return `<label class="check"><input type="checkbox" data-check="${field}" value="${esc(value)}" ${d[field].includes(value) ? "checked" : ""}> ${typeof it === "string" ? esc(it) : `${esc(it.statement)} <span class="muted mono">${esc(it.id)}</span>`}</label>`;
+  }).join("")}</div>` : "";
+  const live = S.hypotheses.filter((h) => h.status !== "refuted").length;
+
+  const cards = S.hypotheses.map((h) => {
+    const key = `hypo:${h.id}`;
+    const tags = [
+      h.members_shown.length ? `대상 ${h.members_shown.map(esc).join(", ")}` : "모임 전체",
+      ...(h.events || []).map((e) => `정모 ${esc(e)}`), ...(h.votes || []).map((v) => `투표 ${esc(v)}`)];
+    return `<div class="hypo-card ${h.status === "refuted" ? "dim" : ""}">
+      <div class="row"><span class="obj">${esc(h.claim_shown)}</span>${chip(h.status)}</div>
+      <div class="muted" style="font-size:12px">${esc(h.id)} · ${esc(h.kind_label)} · ${esc(h.created_by || "")} · ${esc(h.created_at)}
+        ${h.confidence ? ` · 확신 ${esc(confLabel[h.confidence] || h.confidence)}` : ""}</div>
+      <div class="tags">${tags.map((t) => `<span class="tag">${t}</span>`).join("")}</div>
+      <div class="hypo-line"><b>근거</b> ${esc(h.grounds?.reasoning || "")}${h.grounds?.source === "developer" ? ` <span class="muted">(개발자 관찰)</span>` : ""}</div>
+      ${h.grounds_shown.length ? `<ul class="cites">${h.grounds_shown.map((k) => `<li>${esc(k.statement)} <span class="muted mono">${esc(k.id)}</span></li>`).join("")}</ul>` : ""}
+      <div class="hypo-line"><b>확인 방법</b> ${esc(h.test)}</div>
+      <div class="hypo-line muted">증거 ${(h.evidence || []).length}건 (기록 단계는 아직 없음)</div>
+      <details class="item" data-key="${key}" ${ui.openItems.has(key) ? "open" : ""}><summary><span class="label">원본 JSON</span></summary>
+        <pre class="json">${jsonHtml(h)}</pre></details>
+    </div>`;
+  }).join("") || `<p class="empty">아직 가설이 없습니다. 왼쪽에서 첫 가설을 심어 보세요.</p>`;
+
+  $("#view").innerHTML = `<div class="grid">
+    <div class="panel">
+      <h2>새 가설 심기</h2>
+      <p class="muted" style="margin-top:0;font-size:12px">운영 모카가 세운 것과 같은 규칙으로 들어갑니다. 다만 여기서 심는 가설은 저장된 지식 대신
+        로하의 관찰을 근거로 삼을 수 있고, 모카에게는 '로하(대시보드)'가 세운 것으로 보입니다.</p>
+      <form id="hypo-form">
+        <label for="f-h-claim">가설 (claim, ${L.claim}자 이내)</label>
+        <textarea id="f-h-claim" maxlength="${L.claim}" rows="2" placeholder="예: 여러 멤버가 AI를 업무에 더 잘 쓰는 방법을 배우고 싶어 한다">${esc(d.claim)}</textarea>
+        <label for="f-h-kind">종류 (kind)</label>
+        <select id="f-h-kind">${Object.entries(O.kinds).map(([k, v]) => `<option value="${k}" ${d.kind === k ? "selected" : ""}>${esc(v)} (${k})</option>`).join("")}</select>
+        <label for="f-h-members">대상 멤버 (앱에 보이는 이름, 쉼표로 구분 · 모임 전체면 비움)</label>
+        <input type="text" id="f-h-members" placeholder="예: 정재용, 하루" value="${esc(d.members)}">
+        ${checks("knowledge_ids", O.knowledge, "근거가 되는 지식 (선택)")}
+        ${checks("events", O.events, "대상 정모 (선택)")}
+        ${checks("votes", O.votes, "대상 투표 (선택)")}
+        <label for="f-h-reasoning">근거 (reasoning, ${L.reasoning}자 이내) — 왜 이렇게 보는지</label>
+        <textarea id="f-h-reasoning" maxlength="${L.reasoning}" rows="3">${esc(d.reasoning)}</textarea>
+        <label for="f-h-test">확인 방법 (test, ${L.test}자 이내) — 무엇을 보면 뒷받침되거나 약해지는지</label>
+        <textarea id="f-h-test" maxlength="${L.test}" rows="2">${esc(d.test)}</textarea>
+        <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+          <button type="submit" class="primary">가설 심기</button>
+          <span class="muted" style="font-size:12px">폐기되지 않은 가설 ${live}/15</span>
+        </div>
+        ${ui.hypoMsg ? `<div class="note ${ui.hypoMsg.ok ? "ok" : "err"}">${esc(ui.hypoMsg.text)}</div>` : ""}
+      </form>
+      ${jsonBox("미리보기 (보낼 내용 — 이름은 저장할 때 자리표시자로 바뀜)", hypoBody(d))}
+    </div>
+    <div class="panel"><h2>가설 (${S.hypotheses.length}) — 운영 모카가 보는 그대로</h2>${cards}</div>
+  </div>`;
+  bindHypoForm();
+  bindDetails();
+}
+
+function bindHypoForm() {
+  const form = $("#hypo-form");
+  if (!form) return;
+  const d = hypoDraft();
+  const refresh = () => { const box = form.parentElement.querySelector(".json-box pre"); if (box) box.innerHTML = jsonHtml(hypoBody(d)); };
+  const text = { "f-h-claim": "claim", "f-h-members": "members", "f-h-reasoning": "reasoning", "f-h-test": "test" };
+  Object.entries(text).forEach(([id, field]) => ($("#" + id).oninput = (e) => { d[field] = e.target.value; refresh(); }));
+  $("#f-h-kind").onchange = (e) => { d.kind = e.target.value; refresh(); };
+  form.querySelectorAll("[data-check]").forEach((el) => (el.onchange = () => {
+    const list = d[el.dataset.check];
+    const i = list.indexOf(el.value);
+    if (el.checked && i < 0) list.push(el.value);
+    if (!el.checked && i >= 0) list.splice(i, 1);
+    refresh();
+  }));
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const res = await fetch("/api/hypotheses", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(hypoBody(d)) });
+    const out = await res.json();
+    if (res.ok) {
+      ui.hypoDraft = null;
+      ui.hypoMsg = { ok: true, text: `심었습니다: ${out.hypothesis.id}. 운영 모카가 다음에 깨어날 때 봅니다.` };
+    } else ui.hypoMsg = { ok: false, text: out.error };
+    render();
+  };
+}
+
 // --- routing + live data -------------------------------------------------------------------------
 function render() {
   if (!S) return;
@@ -288,6 +391,7 @@ function render() {
     active && active.dataset && active.dataset.crit !== undefined ? { crit: active.dataset.crit, pos: active.selectionStart } : null;
   if (route === "goal" && arg) renderGoal(decodeURIComponent(arg));
   else if (route === "knowledge") renderKnowledge();
+  else if (route === "hypotheses") renderHypotheses();
   else if (route === "flow") renderFlow();
   else renderGoals();
   if (keep) {
@@ -302,7 +406,7 @@ function connect() {
   es.onerror = () => { connected = false; if (S) renderHeader(); };
 }
 
-window.addEventListener("hashchange", () => { ui.formMsg = null; render(); });
+window.addEventListener("hashchange", () => { ui.formMsg = null; ui.hypoMsg = null; render(); });
 fetch("/api/state").then((r) => r.json()).then((s) => { S = s; render(); });
 // ?snapshot: load once without the live connection (for screenshots and saved pages)
 if (!new URLSearchParams(location.search).has("snapshot")) connect();

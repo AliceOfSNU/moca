@@ -1,8 +1,9 @@
 """모카 dashboard: a local, developer-only view of the loop (documents/dashboard.md in the moca project).
 
 Deliberately separate from the moca code: it imports nothing from it. Its only contract is the files moca keeps
-under data/ — goals, steps, tasks, knowledge, consent and the loop's runtime status. It reads them, and writes
-exactly one thing: a new top-level goal into data/goals/goals.json (checked with the same rules as the harness).
+under data/ — goals, steps, tasks, knowledge, hypotheses, consent and the loop's runtime status. It reads them, and
+writes exactly two things, each checked with the same rules as the harness: a new top-level goal into
+data/goals/goals.json, and a new hypothesis into data/hypotheses/hypotheses.json (for seeding 모카's first ones).
 
 Member names are shown the way 운영 모카 sees them: filled in only for members who allowed 모임 운영 use,
 '한 멤버' for everyone else (data/members/scope_consent.json).
@@ -37,6 +38,15 @@ FINISHED = ("achieved", "closed")
 OBJECTIVE_LIMIT = 200
 MAX_CRITERIA = 5
 GOAL_ID = re.compile(r"^g_[a-z0-9_]{1,40}$")
+# the harness's hypothesis rules (moca: harness/hypotheses.py), repeated for the same reason
+HYPO_KINDS = {"need": "원하는 것", "behavior": "행동 패턴", "relationship": "멤버 사이의 관계",
+              "commitment": "참여 의지", "mechanism": "모임 운영 방식의 효과"}
+HYPO_STATUSES = {"refuted": "폐기", "weakened": "약해짐", "open": "검증 전", "supported": "뒷받침됨",
+                 "confirmed": "충분히 뒷받침됨"}
+HYPO_LIMITS = {"claim": 200, "reasoning": 400, "test": 250}
+HYPO_MAX_ACTIVE = 15
+HYPO_SIMILAR = 0.72
+SEEDED_BY = "로하(대시보드)"
 
 DATA = DEFAULT_DATA
 _write_lock = threading.Lock()
@@ -68,7 +78,8 @@ def _jsonl(path):
 def _sources():
     return [DATA / "goals" / "goals.json", DATA / "goals" / "steps.jsonl", DATA / "tasks" / "log.jsonl",
             DATA / "knowledge" / "records.jsonl", DATA / "members" / "scope_consent.json",
-            DATA / "runtime" / "status.json", DATA / "runtime" / "presence.json"] + sorted((DATA / "tasks").glob("t_*.json"))
+            DATA / "runtime" / "status.json", DATA / "runtime" / "presence.json",
+            DATA / "hypotheses" / "hypotheses.json"] + sorted((DATA / "tasks").glob("t_*.json"))
 
 
 def fingerprint():
@@ -90,11 +101,29 @@ class Names:
         consent = _json(DATA / "members" / "scope_consent.json", {})
         self.allowed = {m for m, e in consent.items() if e.get("sharing") is True}
 
+    def show(self, name):
+        return name if name in self.allowed else ANONYMOUS
+
     def fill(self, text, subjects):
-        text = text or ""
-        for i, name in enumerate(subjects or []):
-            text = text.replace(f"{{s{i}}}", name if name in self.allowed else ANONYMOUS)
-        return re.sub(r"\{s\d+\}", ANONYMOUS, text)  # a placeholder we can't resolve never shows a name
+        shown = [self.show(n) for n in subjects or []]
+
+        def one(m):
+            name = shown[int(m.group(1))] if int(m.group(1)) < len(shown) else ANONYMOUS  # never leak an unresolved one
+            return name + (_particle(name, m.group(2)) if m.group(2) else "")
+        return re.sub(r"\{s(\d+)\}(은|는|이|가|을|를|과|와)?", one, text or "")
+
+
+PARTICLES = {"은": ("은", "는"), "는": ("은", "는"), "이": ("이", "가"), "가": ("이", "가"),
+             "을": ("을", "를"), "를": ("을", "를"), "과": ("과", "와"), "와": ("과", "와")}
+
+
+def _particle(word, written):
+    """'한 멤버는', '김범진은': the particle is chosen again for the name actually shown."""
+    with_final, without = PARTICLES[written]
+    last = (word or "")[-1:]
+    if "가" <= last <= "힣":
+        return with_final if (ord(last) - 0xAC00) % 28 else without
+    return written
 
 
 def _tasks(names):
@@ -163,6 +192,35 @@ def _knowledge(names):
         by_task[r["task"]] = by_task.get(r["task"], 0) + 1
     return records, {"total": len(records), "by_basis": by_basis, "by_task": by_task,
                      "today": sum(1 for r in records if r["created_at"].startswith(time.strftime("%Y-%m-%d")))}
+
+
+def _roster():
+    """Everyone who has spoken in the 모임 chat (the app makes each new member say hello), whispers folded in."""
+    return sorted({m["sender"].replace("(귓속말)", "").strip() for m in _jsonl(DATA / "chat" / "transcript.jsonl")
+                   if not m.get("mine") and m.get("sender")})
+
+
+def _hypotheses(names):
+    knowledge = {r["id"]: names.fill(r["statement"], r["subjects"]) for r in _jsonl(DATA / "knowledge" / "records.jsonl")}
+    out = []
+    for h in _json(DATA / "hypotheses" / "hypotheses.json", []):
+        grounds = h.get("grounds", {})
+        out.append(dict(h, claim_shown=names.fill(h["claim"], h.get("members")),
+                        members_shown=[names.show(m) for m in h.get("members", [])],
+                        kind_label=HYPO_KINDS.get(h["kind"], h["kind"]),
+                        status_label=HYPO_STATUSES.get(h["status"], h["status"]),
+                        grounds_shown=[{"id": k, "statement": knowledge.get(k, "(지워진 지식)")}
+                                       for k in grounds.get("knowledge", [])]))
+    return sorted(out, key=lambda h: h["created_at"], reverse=True)
+
+
+def _hypothesis_options(names):
+    """What the seeding form can offer: knowledge to cite, 정모 and votes to tag."""
+    return {"kinds": HYPO_KINDS, "limits": HYPO_LIMITS,
+            "knowledge": [{"id": r["id"], "statement": names.fill(r["statement"], r["subjects"])}
+                          for r in reversed(_jsonl(DATA / "knowledge" / "records.jsonl"))],
+            "events": [e["name"] for e in _json(DATA / "events" / "index.json", {}).get("events", [])],
+            "votes": [v["title"] for v in _json(DATA / "votes" / "index.json", {}).get("votes", [])]}
 
 
 def _loop():
@@ -234,6 +292,7 @@ def state():
     knowledge, stats = _knowledge(names)
     return {"now": time.strftime(FMT), "data": str(DATA), "loop": _loop(), "goals": goals, "steps": steps,
             "tasks": tasks, "knowledge": knowledge, "knowledge_stats": stats, "flow": _flow(steps, tasks),
+            "hypotheses": _hypotheses(names), "hypothesis_options": _hypothesis_options(names),
             "can_add_goal": not any(g["parent_id"] is None and g["status"] not in FINISHED for g in goals)}
 
 
@@ -270,6 +329,83 @@ def add_goal(body):
     return goal, None
 
 
+# --- the second write: a hypothesis seeded by the developer --------------------------------------
+
+def _squash(text):
+    return re.sub(r"[\s.,!?~…'\"]+", "", text or "")
+
+
+def _templatize(text, names):
+    """Member names in the claim become {s0}, {s1}, … (longest first), exactly as moca stores them."""
+    subjects = []
+    for name in sorted(set(names), key=len, reverse=True):
+        if name and name in text:
+            text = re.sub(re.escape(name) + r"(님)?", f"{{s{len(subjects)}}}", text)
+            subjects.append(name)
+    return text, subjects
+
+
+def add_hypothesis(body):
+    """Validate and append a hypothesis. The harness's rules, with one difference: a hypothesis seeded here may
+    rest on the developer's own observation instead of a stored knowledge record, since 모카 has little knowledge
+    yet. It says so in `grounds.source`, and 모카 sees who set it. Returns (record, None) or (None, problem)."""
+    import difflib
+
+    def get(k):
+        v = body.get(k)
+        return v.strip() if isinstance(v, str) else ""
+    claim, kind, reasoning, test = get("claim"), get("kind"), get("reasoning"), get("test")
+    lists = {k: [x.strip() for x in body.get(k) or [] if isinstance(x, str) and x.strip()]
+             for k in ("members", "knowledge_ids", "events", "votes")}
+    if not claim:
+        return None, "가설(claim)을 적어야 합니다"
+    if kind not in HYPO_KINDS:
+        return None, f"종류(kind)는 {list(HYPO_KINDS)} 중 하나여야 합니다"
+    for field, value in (("claim", claim), ("reasoning", reasoning), ("test", test)):
+        if len(value) > HYPO_LIMITS[field]:
+            return None, f"{field}는 {HYPO_LIMITS[field]}자 이내여야 합니다"
+    if not reasoning:
+        return None, "근거(reasoning)를 적어야 합니다. 왜 이렇게 보는지"
+    if not test:
+        return None, "확인 방법(test)을 적어야 합니다. 무엇을 보면 뒷받침되거나 약해지는지"
+    roster = set(_roster())
+    unknown = [m for m in lists["members"] if m not in roster]
+    if unknown:
+        return None, f"모임 채팅에서 본 적 없는 이름입니다: {unknown}. 앱에 보이는 이름 그대로 적으세요"
+    known = {r["id"] for r in _jsonl(DATA / "knowledge" / "records.jsonl")}
+    missing = [k for k in lists["knowledge_ids"] if k not in known]
+    if missing:
+        return None, f"없는 지식 id입니다: {missing}"
+    opts = _hypothesis_options(Names())
+    unknown = [e for e in lists["events"] if e not in opts["events"]] + [v for v in lists["votes"] if v not in opts["votes"]]
+    if unknown:
+        return None, f"없는 정모나 투표입니다: {unknown}"
+
+    template, subjects = _templatize(claim, set(lists["members"]) | {n for n in roster if len(n) > 1 and n in claim})
+    path = DATA / "hypotheses" / "hypotheses.json"
+    with _write_lock:
+        records = _json(path, [])  # re-read right before writing: the loop saves this file too
+        live = [h for h in records if h["status"] != "refuted"]
+        if len(live) >= HYPO_MAX_ACTIVE:
+            return None, f"폐기되지 않은 가설이 이미 {len(live)}개입니다 (최대 {HYPO_MAX_ACTIVE})"
+        a = _squash(template)
+        twin = next((h for h in live if set(h["members"]) == set(subjects)
+                     and difflib.SequenceMatcher(None, _squash(h["claim"]), a).ratio() >= HYPO_SIMILAR), None)
+        if twin:
+            return None, f"비슷한 가설이 이미 있습니다: {twin['id']}"
+        now = time.strftime(FMT)
+        record = {"id": f"h_{time.strftime('%Y%m%d')}_{secrets.token_hex(2)}", "kind": kind, "claim": template,
+                  "members": subjects, "events": lists["events"], "votes": lists["votes"],
+                  "grounds": {"knowledge": lists["knowledge_ids"], "reasoning": reasoning, "source": "developer"},
+                  "test": test, "status": "open", "confidence": None, "evidence": [],
+                  "goal_id": None, "created_by": SEEDED_BY, "created_at": now, "updated_at": now}
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".dashboard.tmp")
+        tmp.write_text(json.dumps(records + [record], ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, path)
+    return record, None
+
+
 # --- http ----------------------------------------------------------------------------------------
 
 class Handler(BaseHTTPRequestHandler):
@@ -301,12 +437,18 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, file.read_bytes(), ctype + "; charset=utf-8")
 
     def do_POST(self):
-        if urlparse(self.path).path != "/api/goals":
+        path = urlparse(self.path).path
+        if path not in ("/api/goals", "/api/hypotheses"):
             return self._send(404, {"error": "not found"})
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
         except ValueError:
             return self._send(400, {"error": "JSON이 아닙니다"})
+        if path == "/api/hypotheses":
+            record, problem = add_hypothesis(body)
+            if problem:
+                return self._send(400, {"error": problem})
+            return self._send(201, {"hypothesis": record})
         goal, problem = add_goal(body)
         if problem:
             return self._send(HTTPStatus.CONFLICT if "진행 중" in problem else 400, {"error": problem})
