@@ -23,6 +23,7 @@ from chatbot.memory_consent import (ask_prompt, awaiting, classify, due, mark_as
                                     parse_command, set_sharing, shares)
 from chatbot.post_tools import POST_SEARCH_RULES, create_with_post_tools
 from chatbot.store import ROOT, ChatStore
+from chatbot import tips
 from harness import stardust
 from harness.devmail import TOOL as DEV_TOOL, DeveloperRequests
 from harness.presence import status_block
@@ -324,6 +325,14 @@ def converse(dm, agent, log, dry_run=False, open_profile=None):
         if not dry_run:
             store.mark_answered(unanswered)
         sent = dm.send(text, dry_run=dry_run)
+        return bool(sent) and not dry_run
+    if any(tips.parse_command(m["text"]) for m in unanswered):
+        tip = tips.pick(last=store.state.get("last_tip"))
+        log(f"{dm.member}님이 '/tip' 입력 → 하네스가 팁을 보냄" + ("" if tip else " (팁 파일이 비어 있음)"))
+        if not dry_run:
+            store.mark_answered(unanswered)
+            store.remember("last_tip", tip)
+        sent = dm.send(tips.message(tip) if tip else "지금은 준비된 팁이 없어요.", dry_run=dry_run)
         return bool(sent) and not dry_run
     sent_today = store.count_today()
     if sent_today > DAILY_LIMIT:
