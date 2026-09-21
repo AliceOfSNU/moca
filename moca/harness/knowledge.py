@@ -14,6 +14,7 @@ Usage (from the moca/ directory):
     python -m harness.knowledge            # every record as 운영 모카 would see it
 """
 import json
+import re
 import secrets
 import sys
 import time
@@ -46,10 +47,30 @@ def render(record):
     """The statement as 운영 모카 may see it right now."""
     from chatbot.memory_consent import shares  # consent is read at display time, on purpose
     from chatbot.profiles import call_name     # and so is the name they asked to be called
-    text = record["statement"]
-    for i, name in enumerate(record["subjects"]):
-        text = text.replace(f"{{s{i}}}", call_name(name) if shares(name) else ANONYMOUS)
-    return text
+    names = [call_name(n) if shares(n) else ANONYMOUS for n in record["subjects"]]
+
+    def fill(m):
+        i = int(m.group(1))
+        if i >= len(names):
+            return m.group(0)
+        return names[i] + (_particle(names[i], m.group(2)) if m.group(2) else "")
+
+    # the particle after a name was written for whichever name the model saw, but the name shown now may be
+    # another one ('한 멤버'), so it is chosen again: 로하는 / 김범진은 / 한 멤버는
+    return re.sub(r"\{s(\d+)\}(은|는|이|가|을|를|과|와)?", fill, record["statement"])
+
+
+PARTICLES = {"은": ("은", "는"), "는": ("은", "는"), "이": ("이", "가"), "가": ("이", "가"),
+             "을": ("을", "를"), "를": ("을", "를"), "과": ("과", "와"), "와": ("과", "와")}
+
+
+def _particle(word, written):
+    """The form of `written` that fits `word`: after a final consonant the first, otherwise the second."""
+    with_final, without = PARTICLES[written]
+    last = (word or "")[-1:]
+    if "가" <= last <= "힣":
+        return with_final if (ord(last) - 0xAC00) % 28 else without
+    return written  # not Hangul: keep what was written
 
 
 def rendered_line(record):

@@ -41,7 +41,7 @@ from chatbot.profiles import MEMBER_TOOL, composition_block
 from chatbot.profiles import search as member_search
 from chatbot.post_tools import create_with_post_tools
 from harness import goals as G
-from harness import knowledge, tasks
+from harness import hypotheses, knowledge, tasks
 
 MODEL = "gpt-6-astra"
 MAX_STEPS = 4            # steps per wake-up
@@ -94,6 +94,20 @@ GOAL_RULES = f"""
   [모임 구성]에는 최근 활동한 멤버만 이름으로 보이니, 다른 멤버가 궁금하면 직접 찾아.
 - list_posts, grep_search, read_file: 게시판 글 목록·검색·읽기.
 - 읽기 도구는 아무것도 바꾸지 않는다. 판단에 필요한 만큼 쓰고, 마지막에 next_step 하나를 골라.
+- propose_hypothesis만 예외로 무언가를 남긴다: 가설 하나를 기록한다(아래 [가설]). 앱은 건드리지 않는다.
+
+## 가설
+- 멤버들이 무엇을 원하는지에 대한 네 추론은 전부 가설이야. 완전히 증명되는 건 없고, 근거를 모아 뒷받침되는지
+  폐기할지를 정할 뿐이야. 추측을 사실처럼 판단의 바탕에 깔지 말고, 가설로 세워 두고 확인해.
+- 좋은 가설은 ① 확인할 수 있고 ② 구체적인 행동으로 이어질 만큼 좁고 ③ 너무 뻔하지도 터무니없지도 않아.
+  모임 전체가 아니라 몇몇 멤버나 특정 멤버에 대한 것도 좋고, 원하는 것뿐 아니라 관계·참여 의지·행동 패턴·
+  운영 방식의 효과에 대한 것도 가설이 될 수 있어.
+- 세울 때도 근거가 필요해. 멤버에 대한 가설은 근거가 되는 지식 id가 하나 이상 있어야 하고(knowledge_search로
+  찾아), 운영 방식의 효과(mechanism)에 대한 가설만 추론만으로 세울 수 있어. test에는 무엇을 보면 뒷받침되고
+  무엇을 보면 약해지는지 적어. 확인할 방법이 없으면 가설이 아니야.
+- 가설은 너만 본다. 채팅 모카와 멤버에게는 보이지 않으니, 멤버에 대한 짐작을 멤버 앞에서 말할 일은 없어.
+- 가설의 상태(검증 전 → 뒷받침됨/약해짐/폐기)는 근거가 쌓이면서 바뀐다. 그 단계는 아직 없으니, 지금은
+  세우는 것까지만 해. 비슷한 가설이 이미 있으면 새로 세우지 말고 그걸 써.
 
 ## 목표
 - 지금 다룰 목표는 하네스가 정해서 [지금 다루는 목표]로 표시해 준다. 그 목표에 대해서만 step을 골라.
@@ -338,8 +352,9 @@ class GoalLoop:
 
     def _decide(self, goal, reason, this_wake, since):
         resp = create_with_post_tools(
-            self.client, log=self.log, extra_tools=[KNOWLEDGE_TOOL, MEMBER_TOOL],
-            handlers={"knowledge_search": _knowledge_search, "member_search": lambda query=None, **_: member_search(query)},
+            self.client, log=self.log, extra_tools=[KNOWLEDGE_TOOL, MEMBER_TOOL, hypotheses.TOOL],
+            handlers={"knowledge_search": _knowledge_search, "member_search": lambda query=None, **_: member_search(query),
+                      "propose_hypothesis": hypotheses.Proposals(goal["id"], log=self.log, dry_run=self.dry_run)},
             model=MODEL, instructions=instructions(), input=self._input(goal, reason, this_wake, since),
             text={"format": {"type": "json_schema", "name": "next_step", "strict": True, "schema": SCHEMA}})
         return json.loads(resp.output_text)["next_step"]
@@ -363,7 +378,8 @@ class GoalLoop:
                                                     for k in new] or ["(없음)"])
         lines += [f"(저장된 지식은 모두 {len(knowledge.load_all())}건. 그 밖의 지식은 knowledge_search로 찾아.)", "",
                   "## 지금 잡혀 있는 정모", EventTools(self.events_ui, self.log).list_events(),
-                  "", "## 진행 중인 투표", open_block(), "", composition_block(), "", "다음 step 하나를 골라."]
+                  "", "## 진행 중인 투표", open_block(), "", composition_block(), "", hypotheses.block(),
+                  "", "다음 step 하나를 골라."]
         return "\n".join(lines)
 
     @staticmethod
