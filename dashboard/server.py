@@ -95,7 +95,8 @@ def fingerprint():
 
 
 PRIVATE_CHANNELS = ("member_note",)   # shown only while the member allows 모임 운영 use
-PUBLIC_CHANNELS = ("intro",)          # the 가입인사 post: names shown for everyone
+PUBLIC_CHANNELS = ("intro", "membership")  # the 가입인사 post and who joined: names shown for everyone
+GROUNDING = ("reported", "observed")  # what may ground a hypothesis — never 모카's own inference
 
 
 def _visible_knowledge(names):
@@ -236,8 +237,8 @@ def _hypotheses(names):
 def _hypothesis_options(names):
     """What the seeding form can offer: knowledge to cite, 정모 and votes to tag."""
     return {"kinds": HYPO_KINDS, "limits": HYPO_LIMITS,
-            "knowledge": [{"id": r["id"], "statement": _statement(r, names)}
-                          for r in reversed(_visible_knowledge(names))],
+            "knowledge": [{"id": r["id"], "statement": _statement(r, names), "basis": r["basis"]}
+                          for r in reversed(_visible_knowledge(names)) if r["basis"] in GROUNDING],
             "events": [e["name"] for e in _json(DATA / "events" / "index.json", {}).get("events", [])],
             "votes": [v["title"] for v in _json(DATA / "votes" / "index.json", {}).get("votes", [])]}
 
@@ -391,10 +392,13 @@ def add_hypothesis(body):
     unknown = [m for m in lists["members"] if m not in roster]
     if unknown:
         return None, f"모임 채팅에서 본 적 없는 이름입니다: {unknown}. 앱에 보이는 이름 그대로 적으세요"
-    known = {r["id"] for r in _visible_knowledge(Names())}
+    known = {r["id"]: r for r in _visible_knowledge(Names())}
     missing = [k for k in lists["knowledge_ids"] if k not in known]
     if missing:
         return None, f"없는 지식 id입니다: {missing}"
+    inferred = [k for k in lists["knowledge_ids"] if known[k]["basis"] not in GROUNDING]
+    if inferred:
+        return None, f"모카의 추론(inferred)은 근거가 될 수 없습니다: {inferred}"
     opts = _hypothesis_options(Names())
     unknown = [e for e in lists["events"] if e not in opts["events"]] + [v for v in lists["votes"] if v not in opts["votes"]]
     if unknown:

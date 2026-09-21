@@ -23,13 +23,10 @@ Names follow the knowledge rule (harness/knowledge.py): stored as placeholders, 
 who allowed 모임 운영 use, "한 멤버" otherwise. Only 운영 모카 creates or sees hypotheses: chat 모카 never
 holds an unverified guess about the person it is talking to.
 
-What can count as evidence, for stage 2:
-- knowledge records — what members said, from chat tasks and 1:1 notes shared for 운영 (reported), or 모카's
-  own inferences (inferred, weaker);
-- vote results — the tally and, for members who allowed it, who picked what;
-- 정모 attendance — who signed up, who actually came (the stardust sweep snapshots attendee lists);
-- participation — chat activity, stardust earned, answers to chat tasks, and silence where an answer was asked for;
-- 모카's own experiments — a 정모, vote or question set up specifically to test a hypothesis.
+What can ground a hypothesis now, and count as evidence in stage 2: knowledge that is either `reported` (a member
+said it — chat tasks, consented notes, intros) or `observed` (the harness saw it — first seen in the chat, daily
+chat stats, 정모 sign-ups, vote results). Never `inferred`: 모카 would be propping up its guesses with its guesses.
+Who actually came to a 정모 isn't known — the app doesn't show it.
 
 Usage (from the moca/ directory):
     python -m harness.hypotheses            # every hypothesis, as 운영 모카 sees it
@@ -112,10 +109,14 @@ def create(claim, kind, members=None, events=None, votes=None, knowledge_ids=Non
     unknown = [m for m in members if m not in roster]
     if unknown:
         return None, f"모르는 멤버입니다: {unknown}. member_search로 앱 이름을 확인하세요"
-    known_ids = {k["id"] for k in knowledge.load_all()}
-    missing = [k for k in knowledge_ids if k not in known_ids]
+    known = {k["id"]: k for k in knowledge.load_all()}
+    missing = [k for k in knowledge_ids if k not in known]
     if missing:
         return None, f"없는 지식 id입니다: {missing}. knowledge_search로 확인하세요"
+    inferred = [k for k in knowledge_ids if known[k]["basis"] not in knowledge.GROUNDING]
+    if inferred:
+        return None, (f"모카의 추론(inferred)은 근거가 될 수 없습니다: {inferred}. 멤버가 직접 말한 것(reported)이나 "
+                      "하네스가 관찰한 사실(observed)을 근거로 쓰세요")
     if kind != "mechanism" and not knowledge_ids:
         return None, ("멤버에 대한 가설은 근거가 되는 지식이 하나 이상 있어야 합니다 (knowledge_ids). "
                       "근거가 아직 없다면 먼저 알아보세요")
@@ -189,7 +190,8 @@ TOOL = {
         "events": {"type": "array", "items": {"type": "string"}, "description": "대상 정모 이름 (있으면)"},
         "votes": {"type": "array", "items": {"type": "string"}, "description": "대상 투표 제목 (있으면)"},
         "knowledge_ids": {"type": "array", "items": {"type": "string"},
-                          "description": "근거가 되는 지식 id (k_…). mechanism이 아니면 하나 이상 필요"},
+                          "description": "근거가 되는 지식 id (k_…). mechanism이 아니면 하나 이상 필요. "
+                                         "멤버가 직접 말한 것(reported)이나 관찰한 사실(observed)만 — 추론(inferred)은 안 된다"},
         "reasoning": {"type": "string", "description": f"근거에서 이 가설로 가는 추론 ({LIMITS['reasoning']}자 이내)"},
         "test": {"type": "string",
                  "description": f"무엇을 보면 뒷받침되고 무엇을 보면 약해지는지 ({LIMITS['test']}자 이내)"}},

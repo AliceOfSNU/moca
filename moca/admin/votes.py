@@ -203,13 +203,13 @@ def vote_result(vote, title):
         return {"outcome": "no_shareable_answer", "summary": summary + " 아무도 답하지 않았다.",
                 "summary_subjects": [], "knowledge": []}
     records = [{"statement": f"투표 '{title}' 결과: {tally} (참여 {vote['participants']}명).",
-                "subjects": [], "basis": "reported", "source_refs": [f"vote:{title}"]}]
+                "subjects": [], "basis": "observed", "source_refs": [f"vote:{title}"]}]
     for option in counted:
         for name in option["voters"]:  # 익명투표면 voters가 비어 있어 집계만 남는다
             # '{s0}님이' 로 쓰는 이유: 이름이 가려지면 '한 멤버'로 바뀌어서, 이름 뒤 조사를 미리 정할 수 없다
             records.append({"statement": f"{{s0}}님이 투표 '{title}'에서 "
                                          f"'{option['name']}'{_eul(option['name'])} 골랐다.",
-                            "subjects": [name], "basis": "reported", "source_refs": [f"vote:{title}"]})
+                            "subjects": [name], "basis": "observed", "source_refs": [f"vote:{title}"]})
     return {"outcome": "answer_available" if len(records) > 1 else "partial_answer", "summary": summary,
             "summary_subjects": [], "knowledge": records}
 

@@ -3,7 +3,7 @@
 One record per line in data/knowledge/records.jsonl:
 
     {"id": "k_...", "statement": "{s0}는 주말 오후에 대체로 참여 가능하다고 밝혔다.", "subjects": ["멤버이름"],
-     "basis": "reported" | "inferred", "source_refs": ["m123"], "origin": {"task": "t_...", "channel": "group_chat"},
+     "basis": "reported" | "inferred" | "observed", "source_refs": ["m123"], "origin": {"task": "t_...", "channel": "group_chat"},
      "created_at": "..."}
 
 Member names are stored as placeholders ({s0}, {s1}, …) and filled in only when the record is shown, following
@@ -23,7 +23,12 @@ from harness.tasks import ROOT
 
 KNOWLEDGE = ROOT / "data" / "knowledge"
 RECORDS = KNOWLEDGE / "records.jsonl"
-BASIS = ["reported", "inferred"]
+BASIS = ["reported", "inferred"]   # what a model may claim in a task report
+OBSERVED = "observed"              # a fact the harness saw itself (counts, sign-ups, who joined) — never from a model
+# what may ground a hypothesis: something a member said, or something the harness saw. 모카's own inferences
+# may not, or 모카 would end up supporting its guesses with its guesses (documents/hypothesis.md)
+GROUNDING = ("reported", OBSERVED)
+BASIS_LABEL = {"reported": "멤버가 직접 말함", "inferred": "모카의 추론", OBSERVED: "하네스가 관찰한 사실"}
 ANONYMOUS = "한 멤버"
 
 
@@ -44,7 +49,7 @@ def add(statement, subjects, basis, source_refs, origin):
 PRIVATE_CHANNELS = ("member_note",)
 # the 가입인사 post is public in the 모임 and written for 모카, so its facts carry the member's name for everyone
 # (chatbot/profiles.py); every other channel shows names only for members who allowed 모임 운영 use
-PUBLIC_CHANNELS = ("intro",)
+PUBLIC_CHANNELS = ("intro", "membership")  # who joined is public too: everyone sees the hello in the chat
 
 
 def visible(records):
@@ -110,7 +115,7 @@ def _particle(word, written):
 
 
 def rendered_line(record):
-    basis = "멤버가 직접 말함" if record["basis"] == "reported" else "모카의 추론"
+    basis = BASIS_LABEL.get(record["basis"], record["basis"])
     when = f", {record['created_at'][:10]}" if record.get("created_at") else ""
     return f"- {render(record)} ({basis}{when})"
 

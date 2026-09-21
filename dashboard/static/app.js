@@ -262,6 +262,7 @@ function renderKnowledge() {
     <div class="stats">
       <div class="stat"><div class="n">${st.total}</div><div class="l">전체</div></div>
       <div class="stat"><div class="n">${st.by_basis.reported || 0}</div><div class="l">멤버가 직접 말함</div></div>
+      <div class="stat"><div class="n">${st.by_basis.observed || 0}</div><div class="l">하네스가 관찰함</div></div>
       <div class="stat"><div class="n">${st.by_basis.inferred || 0}</div><div class="l">모카의 추론</div></div>
       <div class="stat"><div class="n">${st.today}</div><div class="l">오늘 생김</div></div>
       ${tasks.map(([t, n]) => `<div class="stat"><div class="n">${n}</div><div class="l">${esc(t)}</div></div>`).join("")}
@@ -269,7 +270,7 @@ function renderKnowledge() {
     <div class="panel wide"><h2>지식 (운영 모카가 보는 그대로 — 허락하지 않은 멤버는 '한 멤버')</h2>
       ${rows.length ? `<div class="table-wrap"><table><thead><tr><th id="k-sort">created_at ${ui.knowledgeDesc ? "▼" : "▲"}</th><th>내용</th><th>근거</th><th>작업</th><th>id</th></tr></thead><tbody>
         ${rows.map((k) => `<tr><td class="mono">${esc(k.created_at)}</td><td>${esc(k.statement)}</td>
-          <td>${k.basis === "reported" ? "직접 말함" : "추론"} <span class="muted">(${k.sources}개 메시지)</span></td>
+          <td>${({ reported: "직접 말함", observed: "관찰", inferred: "추론" })[k.basis] || esc(k.basis)} <span class="muted">(${k.sources}개 출처)</span></td>
           <td class="mono">${esc(k.task || "")}</td><td class="mono">${esc(k.id)}</td></tr>`).join("")}
       </tbody></table></div>` : `<p class="empty">아직 쌓인 지식이 없습니다. 모임 채팅 작업이 끝나면 여기에 쌓입니다.</p>`}
     </div>`;
@@ -331,7 +332,7 @@ function renderHypotheses() {
         <select id="f-h-kind">${Object.entries(O.kinds).map(([k, v]) => `<option value="${k}" ${d.kind === k ? "selected" : ""}>${esc(v)} (${k})</option>`).join("")}</select>
         <label for="f-h-members">대상 멤버 (앱에 보이는 이름, 쉼표로 구분 · 모임 전체면 비움)</label>
         <input type="text" id="f-h-members" placeholder="예: 정재용, 하루" value="${esc(d.members)}">
-        ${checks("knowledge_ids", O.knowledge, "근거가 되는 지식 (선택)")}
+        ${checks("knowledge_ids", O.knowledge, "근거가 되는 지식 (선택 · 멤버가 말한 것과 관찰된 사실만, 모카의 추론은 제외)")}
         ${checks("events", O.events, "대상 정모 (선택)")}
         ${checks("votes", O.votes, "대상 투표 (선택)")}
         <label for="f-h-reasoning">근거 (reasoning, ${L.reasoning}자 이내) — 왜 이렇게 보는지</label>

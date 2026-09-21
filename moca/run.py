@@ -448,7 +448,8 @@ def main():
         store = ChatStore()
     agent, dm_agent = ChatAgent(client, log=log), DMAgent(client, log=log)
     watcher = None if args.once else NotificationWatcher(dev, log=log)
-    reason, work = "시작", dict(everything(), admin=admin_due(args) or bool(goals_due()), daily=admin_due(args),
+    reason, work = "시작", dict(everything(), admin=admin_due(args) or bool(goals_due()) or bool(tasks.vote_due()),
+                              daily=admin_due(args),
                               memory=memory_due(args))
     retried = False
     while True:
