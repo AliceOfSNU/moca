@@ -36,7 +36,8 @@ function displayStatus(g) {
 }
 const statusLabel = { active: "진행 중", waiting: "대기", achieved: "달성", closed: "닫힘", cooldown: "쉬는 중",
   queued: "대기열", running: "진행 중", succeeded: "성공", failed: "실패", unknown: "?",
-  open: "검증 전", supported: "뒷받침됨", confirmed: "충분히 뒷받침됨", weakened: "약해짐", refuted: "폐기" };
+  open: "검증 전", supported: "뒷받침됨", confirmed: "충분히 뒷받침됨", weakened: "약해짐", refuted: "폐기",
+  planned: "계획됨", paused: "멈춤", finished: "끝남", dropped: "그만둠", missing: "없어짐" };
 const chip = (s) => `<span class="chip s-${esc(s)}">${esc(statusLabel[s] || s)}</span>`;
 
 // the goal the harness would pick next in a tree (same rule as moca's harness/goals.py: focus)
@@ -392,6 +393,150 @@ function bindHypoForm() {
   };
 }
 
+// --- view: programs (form + list) ------------------------------------------------------------------
+const typeLabel = { linear: "단계형", recurring: "정기" };
+const repeatLabel = { constant: "정해진 횟수", conditional: "조건이 맞는 동안", infinite: "끝없이" };
+
+function progDraft() {
+  ui.progDraft = ui.progDraft || { type: "linear", title: "", purpose: "", hypotheses: {}, reasoning: "", goal_id: "",
+    members: "", criteria: "", size_min: "", size_max: "", entry_state: "", exit_state: "", measure: "", duration_days: "",
+    interval_days: "", repeat_kind: "infinite", repeat_count: "", repeat_condition: "", format: "" };
+  return ui.progDraft;
+}
+
+function progBody(d) {
+  const int = (v) => (String(v).trim() === "" ? null : Number(v));
+  const body = { type: d.type, title: d.title, purpose: d.purpose,
+    hypotheses: Object.entries(d.hypotheses).map(([id, why]) => ({ id, why })), reasoning: d.reasoning,
+    goal_id: d.goal_id || null, members: d.members.split(",").map((m) => m.trim()).filter(Boolean),
+    criteria: d.criteria, size_min: int(d.size_min), size_max: int(d.size_max) };
+  if (d.type === "linear") Object.assign(body, { entry_state: d.entry_state, exit_state: d.exit_state, measure: d.measure,
+    duration_days: int(d.duration_days) });
+  else Object.assign(body, { interval_days: int(d.interval_days), repeat_kind: d.repeat_kind,
+    repeat_count: d.repeat_kind === "constant" ? int(d.repeat_count) : null,
+    repeat_condition: d.repeat_kind === "conditional" ? d.repeat_condition : null, format: d.format });
+  return body;
+}
+
+function programCard(p) {
+  const key = `prog:${p.id}`, sh = p.shown, size = p.users.size;
+  const who = [sh.criteria, sh.members.length ? sh.members.join(", ") : "",
+    size.min != null || size.max != null ? `${size.min ?? "?"}~${size.max ?? "?"}명` : ""].filter(Boolean);
+  let shape;
+  if (p.type === "linear") {
+    shape = `<div class="hypo-line"><b>시작 전</b> ${esc(sh.entry_state)}</div>
+      <div class="hypo-line"><b>끝난 뒤</b> ${esc(sh.exit_state)} <span class="muted">(${p.linear.duration_days}일)</span></div>
+      <div class="hypo-line"><b>확인 방법</b> ${esc(sh.measure)}</div>`;
+  } else {
+    const r = p.recurring.repeats;
+    const times = r.kind === "constant" ? `${r.count}회` : r.kind === "conditional" ? `조건: ${esc(sh.condition)}` : "끝없이";
+    shape = `<div class="hypo-line"><b>형식</b> ${esc(sh.format)}</div>
+      <div class="hypo-line"><b>반복</b> 약 ${p.recurring.interval_days}일마다 · ${times}</div>`;
+  }
+  const grounds = p.grounds_shown.map((g) => `<li>${chip(g.status)} ${esc(g.claim)} <span class="muted mono">${esc(g.id)}</span>
+    <div>→ ${esc(g.why)}</div></li>`).join("");
+  return `<div class="hypo-card ${["finished", "dropped"].includes(p.status) ? "dim" : ""}">
+    <div class="row"><span class="obj">${esc(sh.title)}</span>${chip(p.status)}</div>
+    <div class="muted" style="font-size:12px">${esc(p.id)} · ${esc(p.type_label)} · ${esc(p.created_by || "")} · ${esc(p.created_at)}
+      ${p.goal_id ? ` · 목표 ${esc(p.goal_id)}` : ""}</div>
+    ${p.flags.map((f) => `<div class="flag">⚠ ${esc(f)}</div>`).join("")}
+    <div class="hypo-line"><b>목적</b> ${esc(sh.purpose)}</div>
+    <div class="hypo-line"><b>대상</b> ${who.map(esc).join(" · ")}</div>
+    ${shape}
+    <div class="hypo-line"><b>존재 근거</b> ${esc(sh.reasoning)}</div>
+    <ul class="cites">${grounds}</ul>
+    <details class="item" data-key="${key}" ${ui.openItems.has(key) ? "open" : ""}><summary><span class="label">원본 JSON</span></summary>
+      <pre class="json">${jsonHtml(p)}</pre></details>
+  </div>`;
+}
+
+function renderPrograms() {
+  const O = S.program_options, L = O.limits, R = O.ranges, d = progDraft();
+  const live = S.programs.filter((p) => ["planned", "active", "paused"].includes(p.status)).length;
+  const field = (id, key, label, rows = 2) => `<label for="${id}">${label} (${L[key === "repeat_condition" ? "condition" : key]}자 이내)</label>
+    <textarea id="${id}" data-field="${key}" maxlength="${L[key === "repeat_condition" ? "condition" : key]}" rows="${rows}">${esc(d[key])}</textarea>`;
+  const num = (id, key, label, [lo, hi]) => `<div><label for="${id}">${label}</label>
+    <input type="number" id="${id}" data-field="${key}" min="${lo}" max="${hi}" value="${esc(d[key])}"></div>`;
+  const hypos = O.hypotheses.length ? `<div class="checks" style="max-height:none">${O.hypotheses.map((h) => {
+    const on = h.id in d.hypotheses;
+    return `<label class="check"><input type="checkbox" data-hypo="${esc(h.id)}" ${on ? "checked" : ""}> ${chip(h.status)} ${esc(h.claim)} <span class="muted mono">${esc(h.id)}</span></label>
+      ${on ? `<div class="why"><textarea id="f-p-why-${esc(h.id)}" data-why="${esc(h.id)}" maxlength="${L.why}" rows="2"
+        placeholder="이 가설이 이 프로그램을 왜 필요하게 만드는지 (${L.why}자 이내)">${esc(d.hypotheses[h.id])}</textarea></div>` : ""}`;
+  }).join("")}</div>` : `<p class="note err">뒷받침됨 이상인 가설이 없어서 지금은 프로그램을 만들 수 없습니다.</p>`;
+  const typed = d.type === "linear"
+    ? `${field("f-p-entry", "entry_state", "시작 전 상태 (entry_state)")}${field("f-p-exit", "exit_state", "끝난 뒤 상태 (exit_state)")}
+       ${field("f-p-measure", "measure", "확인 방법 (measure) — 끝난 상태에 닿았는지 무엇으로 보는지")}
+       <div class="pair">${num("f-p-duration", "duration_days", `기간 (일, ${R.duration_days.join("~")})`, R.duration_days)}</div>`
+    : `${field("f-p-format", "format", "형식 (format) — 반복되는 주된 활동 하나, 처음 온 사람도 알 수 있게")}
+       <div class="pair">${num("f-p-interval", "interval_days", `주기 (대략 며칠마다, ${R.interval_days.join("~")})`, R.interval_days)}
+         <div><label for="f-p-repeat">반복</label><select id="f-p-repeat">${Object.entries(O.repeat_kinds).map(([k, v]) =>
+           `<option value="${k}" ${d.repeat_kind === k ? "selected" : ""}>${esc(v)} (${k})</option>`).join("")}</select></div></div>
+       ${d.repeat_kind === "constant" ? `<div class="pair">${num("f-p-count", "repeat_count", `횟수 (${R.count.join("~")})`, R.count)}</div>` : ""}
+       ${d.repeat_kind === "conditional" ? field("f-p-cond", "repeat_condition", "조건 — 언제까지 이어가거나 멈추는지") : ""}`;
+
+  $("#view").innerHTML = `<div class="grid">
+    <div class="panel">
+      <h2>새 프로그램</h2>
+      <p class="muted" style="margin-top:0;font-size:12px">운영 모카가 만든 것과 같은 규칙으로 들어갑니다. 뒷받침됨 이상인 가설에 근거해야 하고,
+        '계획됨'으로 시작합니다. 활동(Activity)은 아직 없고, 멤버에게는 보이지 않습니다.</p>
+      <form id="prog-form">
+        <label for="f-p-type">종류 (type)</label>
+        <select id="f-p-type">${Object.entries(O.types).map(([k, v]) => `<option value="${k}" ${d.type === k ? "selected" : ""}>${esc(v)} (${k})</option>`).join("")}</select>
+        <label for="f-p-title">이름 (title, ${L.title}자 이내)</label>
+        <input type="text" id="f-p-title" data-field="title" maxlength="${L.title}" value="${esc(d.title)}">
+        ${field("f-p-purpose", "purpose", "목적 (purpose) — 누구에게 무엇이 어떻게 달라지는지", 3)}
+        <label>존재 근거가 되는 가설 (하나 이상 · 뒷받침됨 이상)</label>${hypos}
+        ${field("f-p-reasoning", "reasoning", "왜 이 형식인지 (reasoning)", 3)}
+        <label for="f-p-goal">목표 (선택)</label>
+        <select id="f-p-goal"><option value="">(없음)</option>${O.goals.map((g) => `<option value="${esc(g.id)}" ${d.goal_id === g.id ? "selected" : ""}>${esc(g.id)} — ${esc(g.objective)}</option>`).join("")}</select>
+        ${field("f-p-criteria", "criteria", "대상 (criteria) — 누구를 위한 것인지")}
+        <label for="f-p-members">참여할 만한 멤버 (앱에 보이는 이름, 쉼표로 구분 · 선택)</label>
+        <input type="text" id="f-p-members" data-field="members" value="${esc(d.members)}">
+        <div class="pair">${num("f-p-min", "size_min", "최소 인원 (선택)", R.size)}${num("f-p-max", "size_max", "최대 인원 (선택)", R.size)}</div>
+        ${typed}
+        <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+          <button type="submit" class="primary" ${O.hypotheses.length ? "" : "disabled"}>프로그램 만들기</button>
+          <span class="muted" style="font-size:12px">끝나지 않은 프로그램 ${live}/${O.max_live}</span>
+        </div>
+        ${ui.progMsg ? `<div class="note ${ui.progMsg.ok ? "ok" : "err"}">${esc(ui.progMsg.text)}</div>` : ""}
+      </form>
+      ${jsonBox("미리보기 (보낼 내용 — 이름은 저장할 때 자리표시자로 바뀜)", progBody(d))}
+    </div>
+    <div class="panel"><h2>프로그램 (${S.programs.length}) — 운영 모카가 보는 그대로</h2>
+      ${S.programs.map(programCard).join("") || `<p class="empty">아직 프로그램이 없습니다.</p>`}</div>
+  </div>`;
+  bindProgForm();
+  bindDetails();
+}
+
+function bindProgForm() {
+  const form = $("#prog-form");
+  if (!form) return;
+  const d = progDraft();
+  const refresh = () => { const box = form.parentElement.querySelector(".json-box pre"); if (box) box.innerHTML = jsonHtml(progBody(d)); };
+  form.querySelectorAll("[data-field]").forEach((el) => (el.oninput = () => { d[el.dataset.field] = el.value; refresh(); }));
+  form.querySelectorAll("[data-why]").forEach((el) => (el.oninput = () => { d.hypotheses[el.dataset.why] = el.value; refresh(); }));
+  form.querySelectorAll("[data-hypo]").forEach((el) => (el.onchange = () => {
+    if (el.checked) d.hypotheses[el.dataset.hypo] = d.hypotheses[el.dataset.hypo] || "";
+    else delete d.hypotheses[el.dataset.hypo];
+    render();
+  }));
+  $("#f-p-type").onchange = (e) => { d.type = e.target.value; render(); };
+  $("#f-p-goal").onchange = (e) => { d.goal_id = e.target.value; refresh(); };
+  const rep = $("#f-p-repeat");
+  if (rep) rep.onchange = (e) => { d.repeat_kind = e.target.value; render(); };
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const res = await fetch("/api/programs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(progBody(d)) });
+    const out = await res.json();
+    if (res.ok) {
+      ui.progDraft = null;
+      ui.progMsg = { ok: true, text: `만들었습니다: ${out.program.id}. 운영 모카가 다음에 깨어날 때 봅니다.` };
+    } else ui.progMsg = { ok: false, text: out.error };
+    render();
+  };
+}
+
 // --- routing + live data -------------------------------------------------------------------------
 function render() {
   if (!S) return;
@@ -405,6 +550,7 @@ function render() {
   if (route === "goal" && arg) renderGoal(decodeURIComponent(arg));
   else if (route === "knowledge") renderKnowledge();
   else if (route === "hypotheses") renderHypotheses();
+  else if (route === "programs") renderPrograms();
   else if (route === "flow") renderFlow();
   else renderGoals();
   if (keep) {
@@ -419,7 +565,7 @@ function connect() {
   es.onerror = () => { connected = false; if (S) renderHeader(); };
 }
 
-window.addEventListener("hashchange", () => { ui.formMsg = null; ui.hypoMsg = null; render(); });
+window.addEventListener("hashchange", () => { ui.formMsg = null; ui.hypoMsg = null; ui.progMsg = null; render(); });
 fetch("/api/state").then((r) => r.json()).then((s) => { S = s; render(); });
 // ?snapshot: load once without the live connection (for screenshots and saved pages)
 if (!new URLSearchParams(location.search).has("snapshot")) connect();

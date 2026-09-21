@@ -1,0 +1,354 @@
+"""Programs: what 모카 plans to run for its 모임, and why (documents/program_activitiy.md).
+
+The chain is Goal → Hypothesis → Program → Activity. A program is a logical unit of activity: a concrete purpose,
+grounded in hypotheses that evidence already supports, that leads to a series of activities. Two types:
+
+- linear (단계형): moves forward in order from an entry state to an exit state, with a measurable change and a
+  finish line within a reasonable time.
+- recurring (정기): one main activity repeated on a rough interval (카공 각자 스터디 정모), templated enough that a
+  newcomer gets the format after one or two times. Several main activities are several programs.
+
+A program must say why it has to exist: every program rests on at least one hypothesis that is supported or
+confirmed when the program is created. If a grounding hypothesis later drops below that, nothing is changed
+automatically — the program is flagged, for 운영 모카 and on the dashboard, and whoever runs it decides.
+
+Activities (the concrete 정모 — discussion, individual study, seminar) are the next stage; until then `sketch` and
+`activity_template` stay null and a program is a plan (`planned`). Programs are internal: members don't see them,
+and 모카 doesn't mention them in the chat.
+
+One record per program in data/programs/programs.json:
+
+    {"id": "p_20260922_3fa1", "type": "linear" | "recurring",
+     "title": "…", "purpose": "무엇이 누구에게 어떻게 달라지는지",
+     "goal_id": "g_…" | null,
+     "rationale": {"hypotheses": [{"id": "h_…", "why": "이 가설이 이 프로그램을 왜 필요하게 만드는지"}],
+                   "reasoning": "왜 다른 방식이 아니라 이 형식인지"},
+     "users": {"members": ["{s0}"], "criteria": "누구를 위한 것인지", "size": {"min": 3, "max": 8}},
+     "linear": {"entry_state", "exit_state", "measure", "duration_days", "sketch": null} | null,
+     "recurring": {"interval_days", "repeats": {"kind": "constant"|"conditional"|"infinite", "count", "condition"},
+                   "format", "activity_template": null} | null,
+     "subjects": ["하루"],                      # the names behind {s…} in every text field
+     "status": "planned", "created_by": "…", "created_at": "…", "updated_at": "…", "started_at": null,
+     "history": []}
+
+Names follow the knowledge rule: stored as placeholders, shown by name only for members who allowed 모임 운영 use,
+"한 멤버" otherwise.
+
+Usage (from the moca/ directory):
+    python -m harness.programs            # every program, as 운영 모카 sees it
+"""
+import difflib
+import json
+import re
+import secrets
+import sys
+import time
+
+from harness.tasks import ROOT
+
+DATA = ROOT / "data" / "programs"
+FILE = DATA / "programs.json"
+
+TYPES = {"linear": "단계형", "recurring": "정기"}
+STATUSES = {"planned": "계획됨", "active": "진행 중", "paused": "멈춤", "finished": "끝남", "dropped": "그만둠"}
+LIVE = ("planned", "active", "paused")
+REPEAT_KINDS = {"constant": "정해진 횟수", "conditional": "조건이 맞는 동안", "infinite": "끝없이"}
+GROUNDING = ("supported", "confirmed")   # hypothesis statuses a program may rest on
+LIMITS = {"title": 40, "purpose": 300, "why": 200, "reasoning": 400, "criteria": 200, "entry_state": 200,
+          "exit_state": 200, "measure": 250, "format": 200, "condition": 200}
+RANGES = {"duration_days": (1, 180), "interval_days": (1, 90), "count": (1, 100), "size": (1, 50)}
+MAX_LIVE = 10
+SIMILAR = 0.72
+
+
+def load():
+    if FILE.exists():
+        return json.loads(FILE.read_text(encoding="utf-8"))
+    return []
+
+
+def save(records):
+    DATA.mkdir(parents=True, exist_ok=True)
+    FILE.write_text(json.dumps(records, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def live(records=None):
+    return [p for p in (records if records is not None else load()) if p["status"] in LIVE]
+
+
+def _placehold(text, subjects):
+    """Member names → {s0}, {s1}, … with one numbering shared by every field of the program."""
+    for i, name in sorted(enumerate(subjects), key=lambda x: len(x[1]), reverse=True):
+        text = re.sub(re.escape(name) + r"(님)?", f"{{s{i}}}", text)
+    return text
+
+
+def show(p, text):
+    from harness import knowledge  # the same consent rule as knowledge, read at display time
+    return knowledge.render({"statement": text or "", "subjects": p.get("subjects", [])})
+
+
+def _squash(text):
+    return re.sub(r"[\s.,!?~…'\"]+", "", text or "")
+
+
+def _similar(a, b):
+    a, b = _squash(a), _squash(b)
+    return bool(a and b) and difflib.SequenceMatcher(None, a, b).ratio() >= SIMILAR
+
+
+def _int(value, key, label):
+    lo, hi = RANGES[key]
+    if isinstance(value, bool) or not isinstance(value, int) or not lo <= value <= hi:
+        return None, f"{label}는 {lo}~{hi} 사이의 정수여야 합니다"
+    return value, None
+
+
+def create(type=None, title=None, purpose=None, hypotheses=None, reasoning=None, members=None, criteria=None,
+           size_min=None, size_max=None, entry_state=None, exit_state=None, measure=None, duration_days=None,
+           interval_days=None, repeat_kind=None, repeat_count=None, repeat_condition=None, format=None,
+           goal_id=None, created_by="admin"):
+    """Store a program if it passes the rules. Returns (record, None) or (None, why it was refused)."""
+    from chatbot.profiles import profiles
+    from harness import goals as G
+    from harness import hypotheses as H
+
+    def clean(v):
+        return v.strip() if isinstance(v, str) else ""
+    text = {"title": clean(title), "purpose": clean(purpose), "reasoning": clean(reasoning),
+            "criteria": clean(criteria), "entry_state": clean(entry_state), "exit_state": clean(exit_state),
+            "measure": clean(measure), "format": clean(format), "condition": clean(repeat_condition)}
+    links = [{"id": clean(x.get("id")), "why": clean(x.get("why"))} for x in hypotheses or [] if isinstance(x, dict)]
+    members = [m for m in (members or []) if m]
+
+    if type not in TYPES:
+        return None, f"type은 {list(TYPES)} 중 하나여야 합니다"
+    for field in ("title", "purpose", "reasoning", "criteria"):
+        if not text[field]:
+            return None, f"{field}가 비어 있습니다"
+    for field, value in list(text.items()) + [("why", x["why"]) for x in links]:
+        if len(value) > LIMITS[field]:
+            return None, f"{field}는 {LIMITS[field]}자 이내여야 합니다"
+
+    # why it has to exist: hypotheses that evidence already supports
+    if not links:
+        return None, ("프로그램은 존재 근거가 되는 가설이 하나 이상 있어야 합니다 (hypotheses). "
+                      "뒷받침된 가설이 없다면 먼저 가설을 확인하세요")
+    if len({x["id"] for x in links}) != len(links):
+        return None, "같은 가설을 두 번 적었습니다"
+    by_id = {h["id"]: h for h in H.load()}
+    for x in links:
+        h = by_id.get(x["id"])
+        if not h:
+            return None, f"없는 가설 id입니다: {x['id']}"
+        if h["status"] not in GROUNDING:
+            return None, (f"가설 {x['id']}는 지금 '{H.STATUSES[h['status']]}' 상태입니다. 프로그램은 뒷받침됨 이상인 "
+                          "가설에만 근거를 둘 수 있습니다")
+        if not x["why"]:
+            return None, f"가설 {x['id']}가 이 프로그램을 왜 필요하게 만드는지(why) 적으세요"
+    if goal_id and not any(g["id"] == goal_id for g in G.load()):
+        return None, f"없는 목표 id입니다: {goal_id}"
+
+    # who it is for
+    roster = profiles()
+    unknown = [m for m in members if m not in roster]
+    if unknown:
+        return None, f"모르는 멤버입니다: {unknown}. member_search로 앱 이름을 확인하세요"
+    size = {}
+    for key, value, label in (("min", size_min, "size_min"), ("max", size_max, "size_max")):
+        if value is not None:
+            size[key], problem = _int(value, "size", label)
+            if problem:
+                return None, problem
+    if "min" in size and "max" in size and size["min"] > size["max"]:
+        return None, "size_min이 size_max보다 큽니다"
+
+    if type == "linear":
+        for field in ("entry_state", "exit_state", "measure"):
+            if not text[field]:
+                return None, f"단계형 프로그램은 {field}가 필요합니다 (시작 전과 끝난 뒤, 그 변화를 무엇으로 확인하는지)"
+        duration_days, problem = _int(duration_days, "duration_days", "duration_days")
+        if problem:
+            return None, problem + " (합리적인 기간 안에 끝나야 합니다)"
+        if any(v not in (None, "") for v in (interval_days, repeat_kind, repeat_count, repeat_condition, format)):
+            return None, "단계형 프로그램에는 정기 프로그램 항목(interval_days, repeat_*, format)을 쓰지 않습니다"
+    else:
+        if not text["format"]:
+            return None, "정기 프로그램은 format이 필요합니다: 반복되는 주된 활동 하나를, 처음 온 사람도 알 수 있게"
+        interval_days, problem = _int(interval_days, "interval_days", "interval_days")
+        if problem:
+            return None, problem
+        if repeat_kind not in REPEAT_KINDS:
+            return None, f"repeat_kind는 {list(REPEAT_KINDS)} 중 하나여야 합니다"
+        if repeat_kind == "constant":
+            repeat_count, problem = _int(repeat_count, "count", "repeat_count")
+            if problem:
+                return None, problem
+        elif repeat_count is not None:
+            return None, "repeat_count는 repeat_kind가 constant일 때만 적습니다"
+        if repeat_kind == "conditional" and not text["condition"]:
+            return None, "repeat_kind가 conditional이면 repeat_condition(언제까지 이어가거나 멈추는지)이 필요합니다"
+        if repeat_kind != "conditional" and text["condition"]:
+            return None, "repeat_condition은 repeat_kind가 conditional일 때만 적습니다"
+        if any(v not in (None, "") for v in (entry_state, exit_state, measure, duration_days)):
+            return None, "정기 프로그램에는 단계형 항목(entry_state, exit_state, measure, duration_days)을 쓰지 않습니다"
+
+    # names anywhere in the text become placeholders too, tagged as a target or not
+    written = " ".join(list(text.values()) + [x["why"] for x in links])
+    subjects = list(dict.fromkeys(members + [n for n in roster if n and len(n) > 1 and n in written
+                                             and n not in members]))
+    ph = {k: _placehold(v, subjects) for k, v in text.items()}
+
+    records = load()
+    alive = live(records)
+    if len(alive) >= MAX_LIVE:
+        return None, f"끝나지 않은 프로그램이 이미 {len(alive)}개입니다. 새로 만들기 전에 기존 프로그램을 정리하세요"
+    twin = next((p for p in alive if _similar(p["title"], ph["title"]) or _similar(p["purpose"], ph["purpose"])), None)
+    if twin:
+        return None, f"비슷한 프로그램이 이미 있습니다: {twin['id']} \"{show(twin, twin['title'])}\""
+
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    record = {
+        "id": f"p_{time.strftime('%Y%m%d')}_{secrets.token_hex(2)}", "type": type,
+        "title": ph["title"], "purpose": ph["purpose"], "goal_id": goal_id or None,
+        "rationale": {"hypotheses": [{"id": x["id"], "why": _placehold(x["why"], subjects)} for x in links],
+                      "reasoning": ph["reasoning"]},
+        "users": {"members": [f"{{s{subjects.index(m)}}}" for m in members], "criteria": ph["criteria"],
+                  "size": {"min": size.get("min"), "max": size.get("max")}},
+        "linear": {"entry_state": ph["entry_state"], "exit_state": ph["exit_state"], "measure": ph["measure"],
+                   "duration_days": duration_days, "sketch": None} if type == "linear" else None,
+        "recurring": {"interval_days": interval_days,
+                      "repeats": {"kind": repeat_kind, "count": repeat_count if repeat_kind == "constant" else None,
+                                  "condition": ph["condition"] or None},
+                      "format": ph["format"], "activity_template": None} if type == "recurring" else None,
+        "subjects": subjects, "status": "planned", "created_by": created_by,
+        "created_at": now, "updated_at": now, "started_at": None, "history": []}
+    records.append(record)
+    save(records)
+    return record, None
+
+
+def flags(p, by_id=None):
+    """Why this program's grounds look shaky now: a grounding hypothesis that fell below supported, or is gone."""
+    from harness import hypotheses as H
+    by_id = by_id if by_id is not None else {h["id"]: h for h in H.load()}
+    out = []
+    for x in p["rationale"]["hypotheses"]:
+        h = by_id.get(x["id"])
+        if not h:
+            out.append(f"근거 가설 {x['id']}가 없어졌습니다")
+        elif h["status"] not in GROUNDING:
+            out.append(f"근거 가설 {x['id']}가 지금 '{H.STATUSES[h['status']]}' 상태입니다")
+    return out
+
+
+def line(p, by_id=None):
+    from harness import hypotheses as H
+    by_id = by_id if by_id is not None else {h["id"]: h for h in H.load()}
+    users = p["users"]
+    who = ", ".join(show(p, m) for m in users["members"])
+    size = users["size"]
+    size_text = "" if size["min"] is None and size["max"] is None else \
+        f" · {size['min'] if size['min'] is not None else '?'}~{size['max'] if size['max'] is not None else '?'}명"
+    out = (f"- {p['id']} [{TYPES[p['type']]} · {STATUSES[p['status']]}] {show(p, p['title'])}"
+           + (f" (목표 {p['goal_id']})" if p.get("goal_id") else "")
+           + f"\n  목적: {show(p, p['purpose'])}"
+           + f"\n  대상: {show(p, users['criteria'])}{' — ' + who if who else ''}{size_text}")
+    if p["type"] == "linear":
+        L = p["linear"]
+        out += (f"\n  시작 전: {show(p, L['entry_state'])} → 끝난 뒤: {show(p, L['exit_state'])} ({L['duration_days']}일)"
+                f"\n  확인: {show(p, L['measure'])}")
+    else:
+        R = p["recurring"]
+        rep = R["repeats"]
+        times = {"constant": f"{rep['count']}회", "conditional": f"조건: {show(p, rep['condition'])}",
+                 "infinite": "끝없이"}[rep["kind"]]
+        out += f"\n  형식: {show(p, R['format'])} (약 {R['interval_days']}일마다, {times})"
+    for x in p["rationale"]["hypotheses"]:
+        h = by_id.get(x["id"])
+        state = H.STATUSES[h["status"]] if h else "없어짐"
+        out += f"\n  근거 {x['id']} [{state}]: {show(p, x['why'])}"
+    for f in flags(p, by_id):
+        out += f"\n  ⚠ {f} — 이 프로그램을 계속할지 다시 볼 것"
+    return out
+
+
+def block():
+    """For 운영 모카's input: programs not finished or dropped, newest first."""
+    alive = sorted(live(), key=lambda p: p["updated_at"], reverse=True)
+    if not alive:
+        return "## 모카의 프로그램\n(아직 없음)"
+    from harness import hypotheses as H
+    by_id = {h["id"]: h for h in H.load()}
+    return "\n".join(["## 모카의 프로그램 (끝나지 않은 것, 최근 순)"] + [line(p, by_id) for p in alive])
+
+
+TOOL = {
+    "type": "function", "name": "propose_program",
+    "description": "프로그램 하나를 만든다. 뒷받침된 가설에 근거해, 구체적인 목적을 가진 일련의 활동 계획을 기록한다. "
+                   "하네스가 규칙을 확인하고 저장한다. 앱은 건드리지 않고 멤버에게도 보이지 않는다.",
+    "parameters": {"type": "object", "properties": {
+        "type": {"type": "string", "enum": list(TYPES),
+                 "description": "linear=단계형 (순서대로 나아가 분명한 끝에 닿는다), recurring=정기 (주된 활동 하나를 주기적으로 반복)"},
+        "title": {"type": "string", "description": f"프로그램 이름 ({LIMITS['title']}자 이내)"},
+        "purpose": {"type": "string", "description": f"구체적인 목적: 누구에게 무엇이 어떻게 달라지는지 ({LIMITS['purpose']}자 이내)"},
+        "hypotheses": {"type": "array", "description": "존재 근거가 되는 가설. 하나 이상, 모두 뒷받침됨 이상이어야 한다",
+                       "items": {"type": "object", "properties": {
+                           "id": {"type": "string", "description": "가설 id (h_…)"},
+                           "why": {"type": "string",
+                                   "description": f"이 가설이 이 프로그램을 왜 필요하게 만드는지 ({LIMITS['why']}자 이내)"}},
+                                 "required": ["id", "why"]}},
+        "reasoning": {"type": "string",
+                      "description": f"같은 가설에 대응할 여러 방법 중 왜 이 형식인지 ({LIMITS['reasoning']}자 이내)"},
+        "members": {"type": "array", "items": {"type": "string"},
+                    "description": "참여할 만한 멤버의 앱 이름 (있으면). 확실하지 않으면 비우고 criteria로 설명해라"},
+        "criteria": {"type": "string", "description": f"누구를 위한 프로그램인지 ({LIMITS['criteria']}자 이내)"},
+        "size_min": {"type": "integer", "description": "알맞은 최소 인원 (선택)"},
+        "size_max": {"type": "integer", "description": "알맞은 최대 인원 (선택)"},
+        "entry_state": {"type": "string", "description": "단계형만: 시작 전 참가자의 상태"},
+        "exit_state": {"type": "string", "description": "단계형만: 끝난 뒤 참가자의 상태"},
+        "measure": {"type": "string", "description": "단계형만: 끝난 상태에 닿았는지 무엇으로 확인하는지"},
+        "duration_days": {"type": "integer", "description": "단계형만: 전체 기간(일)"},
+        "interval_days": {"type": "integer", "description": "정기만: 대략 며칠마다 반복하는지. 정확히 지킬 필요는 없다"},
+        "repeat_kind": {"type": "string", "enum": list(REPEAT_KINDS),
+                        "description": "정기만: constant=정해진 횟수, conditional=조건이 맞는 동안, infinite=끝없이"},
+        "repeat_count": {"type": "integer", "description": "정기이고 constant일 때만: 횟수"},
+        "repeat_condition": {"type": "string", "description": "정기이고 conditional일 때만: 언제까지 이어가거나 멈추는지"},
+        "format": {"type": "string",
+                   "description": "정기만: 반복되는 주된 활동 하나. 처음 온 사람이 한두 번 참여로 알 수 있게"}},
+        "required": ["type", "title", "purpose", "hypotheses", "reasoning", "criteria"]},
+}
+
+
+class Proposals:
+    """Tool handler for the goal loop: the model proposes, the harness decides."""
+
+    def __init__(self, goal_id=None, log=None, dry_run=False):
+        self.goal_id = goal_id
+        self.log = log
+        self.dry_run = dry_run
+
+    def __call__(self, **args):
+        if self.dry_run:
+            return f"(dry-run) 프로그램 요청을 확인했습니다: {args.get('title')}"
+        fields = {k: v for k, v in args.items() if k in TOOL["parameters"]["properties"]}
+        record, problem = create(**fields, goal_id=self.goal_id,
+                                 created_by=f"goal:{self.goal_id}" if self.goal_id else "admin")
+        if problem:
+            if self.log:
+                self.log(f"  프로그램 거절: {problem}")
+            return f"프로그램을 만들지 않았습니다: {problem}"
+        if self.log:
+            self.log(f"  프로그램 {record['id']}: {show(record, record['title'])}")
+        return (f"프로그램 {record['id']}를 만들었습니다 (상태: 계획됨). 활동으로 구체화하는 기능은 아직 없고, "
+                "멤버에게는 보이지 않습니다.")
+
+
+def main():
+    sys.stdout.reconfigure(encoding="utf-8")
+    records = load()
+    print("\n\n".join(line(p) + f"\n  이유: {show(p, p['rationale']['reasoning'])}" for p in records) or "(프로그램 없음)")
+
+
+if __name__ == "__main__":
+    main()

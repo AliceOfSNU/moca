@@ -1,9 +1,10 @@
 """모카 dashboard: a local, developer-only view of the loop (documents/dashboard.md in the moca project).
 
 Deliberately separate from the moca code: it imports nothing from it. Its only contract is the files moca keeps
-under data/ — goals, steps, tasks, knowledge, hypotheses, consent and the loop's runtime status. It reads them, and
-writes exactly two things, each checked with the same rules as the harness: a new top-level goal into
-data/goals/goals.json, and a new hypothesis into data/hypotheses/hypotheses.json (for seeding 모카's first ones).
+under data/ — goals, steps, tasks, knowledge, hypotheses, programs, consent and the loop's runtime status. It reads
+them, and writes exactly three things, each checked with the same rules as the harness: a new top-level goal into
+data/goals/goals.json, a new hypothesis into data/hypotheses/hypotheses.json (for seeding 모카's first ones), and a
+new program into data/programs/programs.json.
 
 Member names are shown the way 운영 모카 sees them: filled in only for members who allowed 모임 운영 use,
 '한 멤버' for everyone else (data/members/scope_consent.json).
@@ -47,6 +48,16 @@ HYPO_LIMITS = {"claim": 200, "reasoning": 400, "test": 250}
 HYPO_MAX_ACTIVE = 15
 HYPO_SIMILAR = 0.72
 SEEDED_BY = "로하(대시보드)"
+# the harness's program rules (moca: harness/programs.py), repeated for the same reason
+PROG_TYPES = {"linear": "단계형", "recurring": "정기"}
+PROG_STATUSES = {"planned": "계획됨", "active": "진행 중", "paused": "멈춤", "finished": "끝남", "dropped": "그만둠"}
+PROG_LIVE = ("planned", "active", "paused")
+PROG_REPEAT_KINDS = {"constant": "정해진 횟수", "conditional": "조건이 맞는 동안", "infinite": "끝없이"}
+PROG_GROUNDING = ("supported", "confirmed")
+PROG_LIMITS = {"title": 40, "purpose": 300, "why": 200, "reasoning": 400, "criteria": 200, "entry_state": 200,
+               "exit_state": 200, "measure": 250, "format": 200, "condition": 200}
+PROG_RANGES = {"duration_days": (1, 180), "interval_days": (1, 90), "count": (1, 100), "size": (1, 50)}
+PROG_MAX_LIVE = 10
 
 DATA = DEFAULT_DATA
 _write_lock = threading.Lock()
@@ -79,7 +90,7 @@ def _sources():
     return [DATA / "goals" / "goals.json", DATA / "goals" / "steps.jsonl", DATA / "tasks" / "log.jsonl",
             DATA / "knowledge" / "records.jsonl", DATA / "members" / "scope_consent.json",
             DATA / "runtime" / "status.json", DATA / "runtime" / "presence.json",
-            DATA / "hypotheses" / "hypotheses.json"] + sorted((DATA / "tasks").glob("t_*.json"))
+            DATA / "hypotheses" / "hypotheses.json", DATA / "programs" / "programs.json"] + sorted((DATA / "tasks").glob("t_*.json"))
 
 
 def fingerprint():
@@ -251,6 +262,48 @@ def _hypothesis_options(names):
             "votes": [v["title"] for v in _json(DATA / "votes" / "index.json", {}).get("votes", [])]}
 
 
+def _programs(names):
+    """Programs with their text filled in as 운영 모카 sees it, their grounding hypotheses' current state, and a flag
+    for each hypothesis that has since fallen below supported (the harness only flags; it never changes a program)."""
+    hypos = {h["id"]: h for h in _json(DATA / "hypotheses" / "hypotheses.json", [])}
+    out = []
+    for p in _json(DATA / "programs" / "programs.json", []):
+        subjects = p.get("subjects", [])
+
+        def fill(text):
+            return names.fill(text, subjects) if text else text
+        grounds, flags = [], []
+        for x in p["rationale"]["hypotheses"]:
+            h = hypos.get(x["id"])
+            grounds.append({"id": x["id"], "why": fill(x["why"]), "status": h["status"] if h else "missing",
+                            "claim": names.fill(h["claim"], h.get("members")) if h else "(없어진 가설)"})
+            if not h:
+                flags.append(f"근거 가설 {x['id']}가 없어졌습니다")
+            elif h["status"] not in PROG_GROUNDING:
+                flags.append(f"근거 가설 {x['id']}가 지금 '{HYPO_STATUSES.get(h['status'], h['status'])}' 상태입니다")
+        shown = {"title": fill(p["title"]), "purpose": fill(p["purpose"]), "reasoning": fill(p["rationale"]["reasoning"]),
+                 "criteria": fill(p["users"]["criteria"]),
+                 "members": [names.fill(m, subjects) for m in p["users"]["members"]]}
+        if p.get("linear"):
+            shown.update({k: fill(p["linear"][k]) for k in ("entry_state", "exit_state", "measure")})
+        if p.get("recurring"):
+            shown.update(format=fill(p["recurring"]["format"]), condition=fill(p["recurring"]["repeats"].get("condition")))
+        out.append(dict(p, shown=shown, grounds_shown=grounds, flags=flags,
+                        type_label=PROG_TYPES.get(p["type"], p["type"]),
+                        status_label=PROG_STATUSES.get(p["status"], p["status"])))
+    return sorted(out, key=lambda p: p["created_at"], reverse=True)
+
+
+def _program_options(names):
+    """What the program form can offer: hypotheses a program may rest on, and goals to attach it to."""
+    return {"types": PROG_TYPES, "repeat_kinds": PROG_REPEAT_KINDS, "limits": PROG_LIMITS, "ranges": PROG_RANGES,
+            "max_live": PROG_MAX_LIVE,
+            "hypotheses": [{"id": h["id"], "claim": names.fill(h["claim"], h.get("members")), "status": h["status"]}
+                           for h in _json(DATA / "hypotheses" / "hypotheses.json", []) if h["status"] in PROG_GROUNDING],
+            "goals": [{"id": g["id"], "objective": g["objective"]} for g in _json(DATA / "goals" / "goals.json", [])
+                      if g["status"] not in FINISHED]}
+
+
 def _loop():
     """Is the loop running, and what is it doing? From the runtime files moca writes."""
     status = _json(DATA / "runtime" / "status.json", {})
@@ -321,6 +374,7 @@ def state():
     return {"now": time.strftime(FMT), "data": str(DATA), "loop": _loop(), "goals": goals, "steps": steps,
             "tasks": tasks, "knowledge": knowledge, "knowledge_stats": stats, "flow": _flow(steps, tasks),
             "hypotheses": _hypotheses(names), "hypothesis_options": _hypothesis_options(names),
+            "programs": _programs(names), "program_options": _program_options(names),
             "can_add_goal": not any(g["parent_id"] is None and g["status"] not in FINISHED for g in goals)}
 
 
@@ -437,6 +491,137 @@ def add_hypothesis(body):
     return record, None
 
 
+# --- the third write: a program --------------------------------------------------------------------
+
+def _placehold(text, subjects):
+    """Member names → {s0}, {s1}, … with one numbering shared by every field of the program."""
+    for i, name in sorted(enumerate(subjects), key=lambda x: len(x[1]), reverse=True):
+        text = re.sub(re.escape(name) + r"(님)?", f"{{s{i}}}", text)
+    return text
+
+
+def add_program(body):
+    """Validate and append a program with the harness's rules (moca: harness/programs.py create()).
+    Returns (record, None) or (None, problem)."""
+    import difflib
+
+    def text(k):
+        v = body.get(k)
+        return v.strip() if isinstance(v, str) else ""
+
+    def number(k):
+        v = body.get(k)
+        return None if v in (None, "") else v
+
+    def in_range(v, key, label):
+        lo, hi = PROG_RANGES[key]
+        if isinstance(v, bool) or not isinstance(v, int) or not lo <= v <= hi:
+            return f"{label}는 {lo}~{hi} 사이의 정수여야 합니다"
+        return None
+
+    kind = body.get("type")
+    t = {k: text(k) for k in ("title", "purpose", "reasoning", "criteria", "entry_state", "exit_state", "measure", "format")}
+    t["condition"] = text("repeat_condition")
+    links = [{"id": (x.get("id") or "").strip(), "why": (x.get("why") or "").strip()}
+             for x in body.get("hypotheses") or [] if isinstance(x, dict)]
+    members = [m.strip() for m in body.get("members") or [] if isinstance(m, str) and m.strip()]
+    goal_id = text("goal_id") or None
+    duration, interval, count = number("duration_days"), number("interval_days"), number("repeat_count")
+    size_min, size_max, repeat_kind = number("size_min"), number("size_max"), body.get("repeat_kind") or None
+
+    if kind not in PROG_TYPES:
+        return None, f"종류(type)는 {list(PROG_TYPES)} 중 하나여야 합니다"
+    for field in ("title", "purpose", "reasoning", "criteria"):
+        if not t[field]:
+            return None, f"{field}를 적어야 합니다"
+    for field, value in list(t.items()) + [("why", x["why"]) for x in links]:
+        if len(value) > PROG_LIMITS[field]:
+            return None, f"{field}는 {PROG_LIMITS[field]}자 이내여야 합니다"
+    if not links:
+        return None, "존재 근거가 되는 가설을 하나 이상 골라야 합니다 (뒷받침됨 이상)"
+    hypos = {h["id"]: h for h in _json(DATA / "hypotheses" / "hypotheses.json", [])}
+    for x in links:
+        h = hypos.get(x["id"])
+        if not h:
+            return None, f"없는 가설 id입니다: {x['id']}"
+        if h["status"] not in PROG_GROUNDING:
+            return None, f"가설 {x['id']}는 지금 '{HYPO_STATUSES.get(h['status'])}' 상태입니다. 뒷받침됨 이상만 근거가 됩니다"
+        if not x["why"]:
+            return None, f"가설 {x['id']}가 이 프로그램을 왜 필요하게 만드는지(why) 적어야 합니다"
+    if goal_id and not any(g["id"] == goal_id for g in _json(DATA / "goals" / "goals.json", [])):
+        return None, f"없는 목표 id입니다: {goal_id}"
+    roster = set(_roster())
+    unknown = [m for m in members if m not in roster]
+    if unknown:
+        return None, f"모임 채팅에서 본 적 없는 이름입니다: {unknown}. 앱에 보이는 이름 그대로 적으세요"
+    for v, label in ((size_min, "최소 인원"), (size_max, "최대 인원")):
+        if v is not None and (problem := in_range(v, "size", label)):
+            return None, problem
+    if size_min is not None and size_max is not None and size_min > size_max:
+        return None, "최소 인원이 최대 인원보다 큽니다"
+    if kind == "linear":
+        for field in ("entry_state", "exit_state", "measure"):
+            if not t[field]:
+                return None, f"단계형 프로그램은 {field}가 필요합니다"
+        if problem := in_range(duration, "duration_days", "기간(duration_days)"):
+            return None, problem
+        interval = repeat_kind = count = None
+        t["format"] = t["condition"] = ""
+    else:
+        if not t["format"]:
+            return None, "정기 프로그램은 형식(format)이 필요합니다"
+        if problem := in_range(interval, "interval_days", "주기(interval_days)"):
+            return None, problem
+        if repeat_kind not in PROG_REPEAT_KINDS:
+            return None, f"반복(repeat_kind)은 {list(PROG_REPEAT_KINDS)} 중 하나여야 합니다"
+        if repeat_kind == "constant":
+            if problem := in_range(count, "count", "횟수(repeat_count)"):
+                return None, problem
+        else:
+            count = None
+        if repeat_kind == "conditional" and not t["condition"]:
+            return None, "조건(repeat_condition)을 적어야 합니다: 언제까지 이어가거나 멈추는지"
+        if repeat_kind != "conditional":
+            t["condition"] = ""
+        duration = None
+        t["entry_state"] = t["exit_state"] = t["measure"] = ""
+
+    written = " ".join(list(t.values()) + [x["why"] for x in links])
+    subjects = list(dict.fromkeys(members + [n for n in roster if len(n) > 1 and n in written and n not in members]))
+    ph = {k: _placehold(v, subjects) for k, v in t.items()}
+    path = DATA / "programs" / "programs.json"
+    with _write_lock:
+        records = _json(path, [])  # re-read right before writing: the loop saves this file too
+        alive = [p for p in records if p["status"] in PROG_LIVE]
+        if len(alive) >= PROG_MAX_LIVE:
+            return None, f"끝나지 않은 프로그램이 이미 {len(alive)}개입니다 (최대 {PROG_MAX_LIVE})"
+        similar = lambda a, b: bool(_squash(a) and _squash(b)) and \
+            difflib.SequenceMatcher(None, _squash(a), _squash(b)).ratio() >= HYPO_SIMILAR
+        twin = next((p for p in alive if similar(p["title"], ph["title"]) or similar(p["purpose"], ph["purpose"])), None)
+        if twin:
+            return None, f"비슷한 프로그램이 이미 있습니다: {twin['id']}"
+        now = time.strftime(FMT)
+        record = {
+            "id": f"p_{time.strftime('%Y%m%d')}_{secrets.token_hex(2)}", "type": kind,
+            "title": ph["title"], "purpose": ph["purpose"], "goal_id": goal_id,
+            "rationale": {"hypotheses": [{"id": x["id"], "why": _placehold(x["why"], subjects)} for x in links],
+                          "reasoning": ph["reasoning"]},
+            "users": {"members": [f"{{s{subjects.index(m)}}}" for m in members], "criteria": ph["criteria"],
+                      "size": {"min": size_min, "max": size_max}},
+            "linear": {"entry_state": ph["entry_state"], "exit_state": ph["exit_state"], "measure": ph["measure"],
+                       "duration_days": duration, "sketch": None} if kind == "linear" else None,
+            "recurring": {"interval_days": interval,
+                          "repeats": {"kind": repeat_kind, "count": count, "condition": ph["condition"] or None},
+                          "format": ph["format"], "activity_template": None} if kind == "recurring" else None,
+            "subjects": subjects, "status": "planned", "created_by": SEEDED_BY,
+            "created_at": now, "updated_at": now, "started_at": None, "history": []}
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".dashboard.tmp")
+        tmp.write_text(json.dumps(records + [record], ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, path)
+    return record, None
+
+
 # --- http ----------------------------------------------------------------------------------------
 
 class Handler(BaseHTTPRequestHandler):
@@ -469,7 +654,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path not in ("/api/goals", "/api/hypotheses"):
+        if path not in ("/api/goals", "/api/hypotheses", "/api/programs"):
             return self._send(404, {"error": "not found"})
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
@@ -480,6 +665,11 @@ class Handler(BaseHTTPRequestHandler):
             if problem:
                 return self._send(400, {"error": problem})
             return self._send(201, {"hypothesis": record})
+        if path == "/api/programs":
+            record, problem = add_program(body)
+            if problem:
+                return self._send(400, {"error": problem})
+            return self._send(201, {"program": record})
         goal, problem = add_goal(body)
         if problem:
             return self._send(HTTPStatus.CONFLICT if "진행 중" in problem else 400, {"error": problem})

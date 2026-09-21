@@ -41,7 +41,7 @@ from chatbot.profiles import MEMBER_TOOL, composition_block
 from chatbot.profiles import search as member_search
 from chatbot.post_tools import create_with_post_tools
 from harness import goals as G
-from harness import evidence, hypotheses, knowledge, sources, tasks
+from harness import evidence, hypotheses, knowledge, programs, sources, tasks
 
 MODEL = "gpt-6-astra"
 MAX_STEPS = 4            # steps per wake-up
@@ -99,7 +99,8 @@ GOAL_RULES = f"""
   [모임 구성]에는 최근 활동한 멤버만 이름으로 보이니, 다른 멤버가 궁금하면 직접 찾아.
 - list_posts, grep_search, read_file: 게시판 글 목록·검색·읽기.
 - 읽기 도구는 아무것도 바꾸지 않는다. 판단에 필요한 만큼 쓰고, 마지막에 next_step 하나를 골라.
-- propose_hypothesis만 예외로 무언가를 남긴다: 가설 하나를 기록한다(아래 [가설]). 앱은 건드리지 않는다.
+- propose_hypothesis와 propose_program만 예외로 무언가를 남긴다: 가설이나 프로그램 하나를 기록한다(아래 [가설],
+  [프로그램]). 앱은 건드리지 않는다.
 
 ## 가설
 - 멤버들이 무엇을 원하는지에 대한 네 추론은 전부 가설이야. 완전히 증명되는 건 없고, 근거를 모아 뒷받침되는지
@@ -117,6 +118,24 @@ GOAL_RULES = f"""
   수 없어. 입력의 [모카의 가설]에 지금 상태와 지지·약화 근거 수, 마지막으로 바뀐 이유가 보인다.
 - 가설이 뒷받침되려면 결국 확인 방법(test)대로 해 봐야 할 때가 많아. 가설을 확인할 정모나 투표를 여는 것도
   목표를 이루는 한 방법이야. 비슷한 가설이 이미 있으면 새로 세우지 말고 그걸 써.
+
+## 프로그램
+- 프로그램은 목표 → 가설 → 프로그램 → 활동으로 이어지는 사슬에서, 뒷받침된 가설을 실제 활동으로 옮기는 계획의
+  단위야. 좋은 프로그램은 ① 구체적인 목적이 있고 ② 뒷받침됨 이상인 가설에 근거를 두고 ③ 이어지거나 반복되는
+  활동을 이끈다. 가설마다 이 가설이 왜 이 프로그램을 필요하게 만드는지(why)를 적어. 근거 가설이 없거나 아직
+  검증 전이면 하네스가 거절한다.
+- 단계형(linear): 순서대로 나아가 분명한 끝에 닿는 프로그램. 시작 전과 끝난 뒤의 변화(entry_state → exit_state)가
+  있고 그 변화를 무엇으로 확인할지(measure) 적을 수 있어야 하며, 순서를 마음대로 바꿀 수 없고, 합리적인 기간
+  (duration_days) 안에 끝난다.
+- 정기(recurring): 카공 각자 스터디처럼 주된 활동 하나를 대략 일정한 주기로 반복하는 프로그램. 요일이나 장소가
+  가끔 바뀌어도 형식이 같으면 된다. 형식(format)이 붕어빵처럼 틀에 찍어낼 수 있어서, 중간에 온 사람도 한두 번
+  참여로 알 수 있어야 한다. 주된 활동이 여럿이면 프로그램을 나눠. 반복은 정해진 횟수(constant), 조건이 맞는
+  동안(conditional), 끝없이(infinite) 중 하나.
+- 대상은 참여할 만한 멤버(members)와, 누구를 위한 것인지(criteria)로 적어. 확실하지 않은 멤버는 넣지 마.
+- 프로그램은 아직 계획일 뿐이야. 활동(토론, 각자 스터디, 세미나 같은 구체적인 정모)으로 구체화하는 기능은 아직
+  없어. 프로그램은 너만 보고 멤버에게는 보이지 않으니, 채팅이나 공지에서 프로그램을 말하지 마.
+- 근거 가설이 나중에 뒷받침됨 아래로 떨어지면 입력의 [모카의 프로그램]에 ⚠로 표시된다. 하네스는 프로그램을
+  바꾸지 않으니, 그 프로그램을 계속할지 네가 판단해. 비슷한 프로그램이 이미 있으면 새로 만들지 마.
 
 ## 목표
 - 지금 다룰 목표는 하네스가 정해서 [지금 다루는 목표]로 표시해 준다. 그 목표에 대해서만 step을 골라.
@@ -369,9 +388,10 @@ class GoalLoop:
 
     def _decide(self, goal, reason, this_wake, since):
         resp = create_with_post_tools(
-            self.client, log=self.log, extra_tools=[KNOWLEDGE_TOOL, MEMBER_TOOL, hypotheses.TOOL],
+            self.client, log=self.log, extra_tools=[KNOWLEDGE_TOOL, MEMBER_TOOL, hypotheses.TOOL, programs.TOOL],
             handlers={"knowledge_search": _knowledge_search, "member_search": lambda query=None, **_: member_search(query),
-                      "propose_hypothesis": hypotheses.Proposals(goal["id"], log=self.log, dry_run=self.dry_run)},
+                      "propose_hypothesis": hypotheses.Proposals(goal["id"], log=self.log, dry_run=self.dry_run),
+                      "propose_program": programs.Proposals(goal["id"], log=self.log, dry_run=self.dry_run)},
             model=MODEL, instructions=instructions(), input=self._input(goal, reason, this_wake, since),
             text={"format": {"type": "json_schema", "name": "next_step", "strict": True, "schema": SCHEMA}})
         return json.loads(resp.output_text)["next_step"]
@@ -398,7 +418,7 @@ class GoalLoop:
             lines.append(f"(이번에 새로 쌓인 지식은 {len(new)}건이고 최근 {len(shown)}건만 보여. 나머지는 knowledge_search로 찾아.)")
         lines += [f"(저장된 지식은 모두 {len(knowledge.load_all())}건. 그 밖의 지식은 knowledge_search로 찾아.)", "",
                   "## 지금 잡혀 있는 정모", EventTools(self.events_ui, self.log).list_events(),
-                  "", "## 진행 중인 투표", open_block(), "", composition_block(), "", hypotheses.block(),
+                  "", "## 진행 중인 투표", open_block(), "", composition_block(), "", hypotheses.block(), "", programs.block(),
                   "", "다음 step 하나를 골라."]
         return "\n".join(lines)
 

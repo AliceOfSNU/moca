@@ -66,7 +66,7 @@ h1 { font-size: 20px; margin: 4px 0 2px; }
 .bar { height: 5px; background: var(--soft); border-radius: 3px; overflow: hidden; margin-top: 8px; }
 .bar > span { display: block; height: 100%; background: var(--green); }
 form label { display: block; font-weight: 600; margin: 10px 0 4px; }
-input[type=text], textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; }
+input[type=text], input[type=number], textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; }
 .crit { display: flex; gap: 6px; margin-bottom: 6px; }
 button { font: inherit; border: 1px solid var(--line); background: var(--soft); color: var(--ink); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
 button.primary { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 700; }
@@ -167,3 +167,13 @@ form label.check { display: flex; gap: 8px; align-items: baseline; font-weight: 
 .tag { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--gray-bg); color: var(--ink); }
 .hypo-line { font-size: 13px; margin-top: 6px; }
 .cites { margin: 4px 0 0; padding-left: 18px; font-size: 12px; color: var(--muted); }
+
+/* programs */
+.s-planned { background: var(--gray-bg); color: var(--gray); }
+.s-paused { background: var(--amber-bg); color: var(--amber); }
+.s-finished { background: var(--green-bg); color: var(--green); }
+.s-dropped, .s-missing { background: var(--red-bg); color: var(--red); }
+.flag { font-size: 12px; margin-top: 6px; padding: 4px 8px; border-radius: 6px; background: var(--amber-bg); color: var(--amber); }
+.pair { display: flex; gap: 8px; }
+.pair > div { flex: 1; min-width: 0; }
+.why { margin: 2px 0 8px 24px; }
