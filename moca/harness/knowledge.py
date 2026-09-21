@@ -49,19 +49,36 @@ def add(statement, subjects, basis, source_refs, origin):
 PRIVATE_CHANNELS = ("member_note",)
 # the 가입인사 post is public in the 모임 and written for 모카, so its facts carry the member's name for everyone
 # (chatbot/profiles.py); every other channel shows names only for members who allowed 모임 운영 use
-PUBLIC_CHANNELS = ("intro", "membership")  # who joined is public too: everyone sees the hello in the chat
+PUBLIC_CHANNELS = ("intro", "membership", "post")  # who joined and what a board post says are public too
 
 
 def visible(records):
+    """Hide what was superseded or withdrawn. Two ways a record is superseded: a newer record with the same
+    origin.key (one fact per source), or a newer version of its origin.group (a set of facts drawn from one
+    source together, like the facts of a board post — edit the post and the whole set is replaced). A record
+    with origin.retracted is a tombstone: it hides its group and is never shown itself."""
     from chatbot.memory_consent import shares  # consent is read at display time, on purpose
-    newest = {}
+    newest, version = {}, {}
     for r in records:
-        key = r["origin"].get("key")
-        if key:
-            newest[key] = r["id"]
+        o = r["origin"]
+        if o.get("key"):
+            newest[o["key"]] = r["id"]
+        if o.get("group"):
+            version[o["group"]] = o.get("version")
     return [r for r in records
-            if (not r["origin"].get("key") or newest[r["origin"]["key"]] == r["id"])
+            if not r["origin"].get("retracted")
+            and (not r["origin"].get("key") or newest[r["origin"]["key"]] == r["id"])
+            and (not r["origin"].get("group") or version[r["origin"]["group"]] == r["origin"].get("version"))
             and (r["origin"].get("channel") not in PRIVATE_CHANNELS or all(shares(s) for s in r["subjects"]))]
+
+
+def latest_versions():
+    """{origin.group: newest version} over everything stored, tombstones included."""
+    out = {}
+    for r in load_all(include_hidden=True):
+        if r["origin"].get("group"):
+            out[r["origin"]["group"]] = r["origin"].get("version")
+    return out
 
 
 def load_all(include_hidden=False):

@@ -91,8 +91,8 @@ GOAL_RULES = f"""
 ## 읽기 도구 (이 호출 안에서 바로 쓴다)
 - knowledge_search: 모임에 대해 쌓인 지식을 찾는다. 입력에는 지난 판단 이후 새로 생긴 지식만 보이니,
   그 전의 지식이 필요하면 직접 찾아. 지식의 근거(basis)는 셋이다: 멤버가 직접 말한 것(reported — 모임 채팅
-  작업의 결과, 운영 활용을 허락한 멤버의 메모, 가입인사), 하네스가 관찰한 사실(observed — 멤버를 처음 본 날,
-  날마다의 채팅 통계, 정모 참석 신청, 투표 결과), 모카의 추론(inferred). 자기소개와 처음 본 날은 누구든
+  작업의 결과, 운영 활용을 허락한 멤버의 메모, 가입인사, 게시글에서 뽑은 사실), 하네스가 관찰한 사실(observed — 멤버를 처음 본 날,
+  날마다의 채팅 통계, 정모 참석 신청, 투표 결과), 모카의 추론(inferred). 자기소개·게시글·처음 본 날은 누구든
   이름이 보이고(모두에게 공개된 것이라서), 그 밖의 지식은 운영 활용을 허락한 멤버만 이름이 보인다.
   정모에 실제로 누가 왔는지는 앱에서 알 수 없어 지식에 없다.
 - member_search: 멤버 자기소개(부를 이름·나이·하는 일·모이기 편한 곳 또는 사는 곳·한마디)와 최근 채팅 활동을 찾는다. 입력의
@@ -239,8 +239,9 @@ def instructions():
 def _source(k):
     """Where a knowledge record came from, in a few words."""
     o = k["origin"]
-    return {"member_note": f"멤버 메모({o.get('context')})", "intro": "자기소개", "vote": f"투표 작업 {o.get('task')}"
-            }.get(o.get("channel"), f"작업 {o.get('task')}")
+    return {"member_note": f"멤버 메모({o.get('context')})", "intro": "자기소개", "vote": f"투표 작업 {o.get('task')}",
+            "post": f"게시글 「{o.get('title')}」", "membership": "모임 채팅 관찰", "chat_stats": "모임 채팅 통계",
+            "event": "정모 참석자 명단"}.get(o.get("channel"), f"작업 {o.get('task')}")
 
 
 def _knowledge_search(query=None, basis=None, since=None, subject=None, limit=20, **ignored):

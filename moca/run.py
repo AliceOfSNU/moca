@@ -22,7 +22,7 @@ from admin.events import sync_events
 from admin.votes import finish_vote_tasks, sync_votes
 from admin.goal_loop import GoalLoop
 from chatbot.config import DEVELOPER
-from harness import devmail, sources, stardust, tasks
+from harness import devmail, post_facts, sources, stardust, tasks
 from harness.goals import focus as goals_due
 from chatbot.agent import ACCOUNT_NAME, ChatAgent, answerable, format_line, is_call, secret
 from chatbot.dm import (DMAgent, ask_memory_scope, converse, greet_newcomers, has_consented, load_consent,
@@ -298,6 +298,7 @@ def post_session(args, chat, dm_agent):
             stardust.award(entry["author"], "post", ref=entry["path"], log=log)  # 글 하나당 한 번만
     if not args.dry_run:
         sources.sync(log)  # 새 가입인사를 바로 지식으로
+        post_facts.sync(dm_agent.client, log)  # 새 글·고친 글에서 운영에 쓸 사실을 뽑는다 (바뀐 글만)
     intros = [{"author": e["author"], "title": e["listed_title"], "time": e["listed_time"]}
               for e in load_index()["posts"] if e["category"] == "가입인사" and not e["pinned"]]
     greet_newcomers(chat, dm_agent, log, dry_run=args.dry_run, posts=intros)

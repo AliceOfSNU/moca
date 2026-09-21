@@ -34,6 +34,7 @@ from somoim.chat import MINE, SomoimChat, split_message
 from somoim.direct import DirectChat
 
 DM_MODEL = "gpt-5.6-sol"
+DM_REASONING = "xhigh"  # one above high; 1:1 replies are few and personal, so they get the most thought
 DM_DATA = ROOT / "data" / "dm"
 GREETINGS = DM_DATA / "greetings.json"
 CONSENT = DM_DATA / "consent.json"
@@ -69,11 +70,12 @@ class DMAgent:
     def __init__(self, client, model=DM_MODEL, log=None):
         self.client = client
         self.model = model
+        self.reasoning = {"effort": DM_REASONING}
         self.log = log
 
     def _text(self, instructions, prompt, search=True):
         resp = self.client.responses.create(
-            model=self.model, instructions=instructions, input=prompt,
+            model=self.model, reasoning=self.reasoning, instructions=instructions, input=prompt,
             tools=[{"type": "web_search"}] if search else [])
         return plain_text(resp.output_text)
 
@@ -105,7 +107,8 @@ class DMAgent:
                                       extra_tools=[MEMBER_TOOL, DEV_TOOL],
                                       handlers={"propose_member_data": MemberNotes(member=member, context="dm", log=self.log),
                                                 "ask_developer": DeveloperRequests(asked_by=f"dm:{member}", log=self.log)},
-                                      model=self.model, instructions=dm_prompt(member), input=prompt)
+                                      model=self.model, reasoning=self.reasoning,
+                                      instructions=dm_prompt(member), input=prompt)
         return plain_text(resp.output_text)
 
     def describe_photo(self, png):

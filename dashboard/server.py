@@ -95,15 +95,19 @@ def fingerprint():
 
 
 PRIVATE_CHANNELS = ("member_note",)   # shown only while the member allows 모임 운영 use
-PUBLIC_CHANNELS = ("intro", "membership")  # the 가입인사 post and who joined: names shown for everyone
+PUBLIC_CHANNELS = ("intro", "membership", "post")  # 가입인사, who joined, board posts: names shown for everyone
 GROUNDING = ("reported", "observed")  # what may ground a hypothesis — never 모카's own inference
 
 
 def _visible_knowledge(names):
+    """moca's knowledge.visible: newest per key, newest version per group, no tombstones, consent for notes."""
     records = _jsonl(DATA / "knowledge" / "records.jsonl")
     newest = {r["origin"]["key"]: r["id"] for r in records if r.get("origin", {}).get("key")}
+    version = {r["origin"]["group"]: r["origin"].get("version") for r in records if r.get("origin", {}).get("group")}
     return [r for r in records
-            if (not r["origin"].get("key") or newest[r["origin"]["key"]] == r["id"])
+            if not r["origin"].get("retracted")
+            and (not r["origin"].get("key") or newest[r["origin"]["key"]] == r["id"])
+            and (not r["origin"].get("group") or version[r["origin"]["group"]] == r["origin"].get("version"))
             and (r["origin"].get("channel") not in PRIVATE_CHANNELS or all(x in names.allowed for x in r["subjects"]))]
 
 
@@ -203,7 +207,9 @@ def _knowledge(names):
     records = []
     for r in _visible_knowledge(names):
         records.append({"id": r["id"], "statement": _statement(r, names),
-                        "basis": r["basis"], "created_at": r["created_at"], "task": r["origin"].get("task"),
+                        "basis": r["basis"], "created_at": r["created_at"],
+                        "task": r["origin"].get("task") or (f"게시글 「{r['origin']['title']}」" if r["origin"].get("title")
+                                                             else r["origin"].get("channel")),
                         "channel": r["origin"].get("channel"), "sources": len(r.get("source_refs", []))})
     records.sort(key=lambda r: r["created_at"])
     by_basis, by_task = {}, {}
