@@ -94,6 +94,22 @@ def fingerprint():
     return hashlib.sha1("|".join(parts).encode()).hexdigest()
 
 
+PRIVATE_CHANNELS = ("member_note",)   # shown only while the member allows 모임 운영 use
+PUBLIC_CHANNELS = ("intro",)          # the 가입인사 post: names shown for everyone
+
+
+def _visible_knowledge(names):
+    records = _jsonl(DATA / "knowledge" / "records.jsonl")
+    newest = {r["origin"]["key"]: r["id"] for r in records if r.get("origin", {}).get("key")}
+    return [r for r in records
+            if (not r["origin"].get("key") or newest[r["origin"]["key"]] == r["id"])
+            and (r["origin"].get("channel") not in PRIVATE_CHANNELS or all(x in names.allowed for x in r["subjects"]))]
+
+
+def _statement(r, names):
+    return names.fill(r["statement"], r["subjects"], public=r["origin"].get("channel") in PUBLIC_CHANNELS)
+
+
 class Names:
     """Placeholders ({s0}, {s1}, …) filled in the way 운영 모카 sees them."""
 
@@ -104,13 +120,16 @@ class Names:
     def show(self, name):
         return name if name in self.allowed else ANONYMOUS
 
-    def fill(self, text, subjects):
-        shown = [self.show(n) for n in subjects or []]
+    def fill(self, text, subjects, public=False):
+        """`public`: an intro fact, which names its member for everyone (moca: harness/knowledge.py)."""
+        shown = [n if public or n in self.allowed else None for n in subjects or []]
 
         def one(m):
-            name = shown[int(m.group(1))] if int(m.group(1)) < len(shown) else ANONYMOUS  # never leak an unresolved one
-            return name + (_particle(name, m.group(2)) if m.group(2) else "")
-        return re.sub(r"\{s(\d+)\}(은|는|이|가|을|를|과|와)?", one, text or "")
+            i = int(m.group(1))
+            name = shown[i] if i < len(shown) else None  # never leak an unresolved placeholder
+            word = ANONYMOUS if name is None else name + (m.group(2) or "")  # '님' only with a shown name
+            return word + (_particle(word, m.group(3)) if m.group(3) else "")
+        return re.sub(r"\{s(\d+)\}(님)?(은|는|이|가|을|를|과|와)?", one, text or "")
 
 
 PARTICLES = {"은": ("은", "는"), "는": ("은", "는"), "이": ("이", "가"), "가": ("이", "가"),
@@ -181,8 +200,8 @@ def _steps(names):
 
 def _knowledge(names):
     records = []
-    for r in _jsonl(DATA / "knowledge" / "records.jsonl"):
-        records.append({"id": r["id"], "statement": names.fill(r["statement"], r["subjects"]),
+    for r in _visible_knowledge(names):
+        records.append({"id": r["id"], "statement": _statement(r, names),
                         "basis": r["basis"], "created_at": r["created_at"], "task": r["origin"].get("task"),
                         "channel": r["origin"].get("channel"), "sources": len(r.get("source_refs", []))})
     records.sort(key=lambda r: r["created_at"])
@@ -201,7 +220,7 @@ def _roster():
 
 
 def _hypotheses(names):
-    knowledge = {r["id"]: names.fill(r["statement"], r["subjects"]) for r in _jsonl(DATA / "knowledge" / "records.jsonl")}
+    knowledge = {r["id"]: _statement(r, names) for r in _visible_knowledge(names)}
     out = []
     for h in _json(DATA / "hypotheses" / "hypotheses.json", []):
         grounds = h.get("grounds", {})
@@ -217,8 +236,8 @@ def _hypotheses(names):
 def _hypothesis_options(names):
     """What the seeding form can offer: knowledge to cite, 정모 and votes to tag."""
     return {"kinds": HYPO_KINDS, "limits": HYPO_LIMITS,
-            "knowledge": [{"id": r["id"], "statement": names.fill(r["statement"], r["subjects"])}
-                          for r in reversed(_jsonl(DATA / "knowledge" / "records.jsonl"))],
+            "knowledge": [{"id": r["id"], "statement": _statement(r, names)}
+                          for r in reversed(_visible_knowledge(names))],
             "events": [e["name"] for e in _json(DATA / "events" / "index.json", {}).get("events", [])],
             "votes": [v["title"] for v in _json(DATA / "votes" / "index.json", {}).get("votes", [])]}
 
@@ -372,7 +391,7 @@ def add_hypothesis(body):
     unknown = [m for m in lists["members"] if m not in roster]
     if unknown:
         return None, f"모임 채팅에서 본 적 없는 이름입니다: {unknown}. 앱에 보이는 이름 그대로 적으세요"
-    known = {r["id"] for r in _jsonl(DATA / "knowledge" / "records.jsonl")}
+    known = {r["id"] for r in _visible_knowledge(Names())}
     missing = [k for k in lists["knowledge_ids"] if k not in known]
     if missing:
         return None, f"없는 지식 id입니다: {missing}"

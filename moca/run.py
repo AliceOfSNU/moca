@@ -22,7 +22,7 @@ from admin.events import sync_events
 from admin.votes import finish_vote_tasks, sync_votes
 from admin.goal_loop import GoalLoop
 from chatbot.config import DEVELOPER
-from harness import devmail, stardust, tasks
+from harness import devmail, sources, stardust, tasks
 from harness.goals import focus as goals_due
 from chatbot.agent import ACCOUNT_NAME, ChatAgent, answerable, format_line, is_call, secret
 from chatbot.dm import (DMAgent, ask_memory_scope, converse, greet_newcomers, has_consented, load_consent,
@@ -266,6 +266,8 @@ def admin_session(args, chat, client, daily=False):
     sync_events(events_ui, log)
     sync_votes(votes_ui, log)
     finish_vote_tasks(votes_ui, log, dry_run=args.dry_run)  # 끝난 투표의 집계를 먼저 걷어 온다
+    if not args.dry_run:
+        sources.sync(log)  # 허락된 멤버 메모와 자기소개를 지식으로 (바뀐 것만)
     handled = GoalLoop(client, events_ui, log, dry_run=args.dry_run, daily_hour=args.admin_hour,
                        votes_ui=votes_ui, board_ui=SomoimBoard(chat)).run(daily=daily)
     if not handled:
@@ -294,6 +296,8 @@ def post_session(args, chat, dm_agent):
     for entry in sync_posts(SomoimBoard(chat), log, full=full):
         if entry["author"] != ACCOUNT_NAME and not args.dry_run:
             stardust.award(entry["author"], "post", ref=entry["path"], log=log)  # 글 하나당 한 번만
+    if not args.dry_run:
+        sources.sync(log)  # 새 가입인사를 바로 지식으로
     intros = [{"author": e["author"], "title": e["listed_title"], "time": e["listed_time"]}
               for e in load_index()["posts"] if e["category"] == "가입인사" and not e["pinned"]]
     greet_newcomers(chat, dm_agent, log, dry_run=args.dry_run, posts=intros)

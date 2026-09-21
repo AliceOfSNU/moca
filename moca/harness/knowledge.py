@@ -37,27 +37,63 @@ def add(statement, subjects, basis, source_refs, origin):
     return record
 
 
-def load_all():
+# Records derived from a standing source (a member note, an intro field) carry origin.key. The file stays
+# append-only: when the source changes, a new record is added and only the newest one per key is shown.
+# A record from a member note is shown only while that member allows 모임 운영 use — it is theirs to withdraw,
+# and unlike chat answers it is never shown as '한 멤버' instead (chatbot/memory_consent.py).
+PRIVATE_CHANNELS = ("member_note",)
+# the 가입인사 post is public in the 모임 and written for 모카, so its facts carry the member's name for everyone
+# (chatbot/profiles.py); every other channel shows names only for members who allowed 모임 운영 use
+PUBLIC_CHANNELS = ("intro",)
+
+
+def visible(records):
+    from chatbot.memory_consent import shares  # consent is read at display time, on purpose
+    newest = {}
+    for r in records:
+        key = r["origin"].get("key")
+        if key:
+            newest[key] = r["id"]
+    return [r for r in records
+            if (not r["origin"].get("key") or newest[r["origin"]["key"]] == r["id"])
+            and (r["origin"].get("channel") not in PRIVATE_CHANNELS or all(shares(s) for s in r["subjects"]))]
+
+
+def load_all(include_hidden=False):
+    """Every record 운영 모카 may see now. `include_hidden` is for the harness's own bookkeeping only."""
     if not RECORDS.exists():
         return []
-    return [json.loads(line) for line in RECORDS.read_text(encoding="utf-8").splitlines() if line.strip()]
+    records = [json.loads(line) for line in RECORDS.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return records if include_hidden else visible(records)
+
+
+def latest_by_key():
+    """{origin.key: newest record} over everything stored, hidden or not — so a source isn't re-added."""
+    out = {}
+    for r in load_all(include_hidden=True):
+        if r["origin"].get("key"):
+            out[r["origin"]["key"]] = r
+    return out
 
 
 def render(record):
     """The statement as 운영 모카 may see it right now."""
     from chatbot.memory_consent import shares  # consent is read at display time, on purpose
     from chatbot.profiles import call_name     # and so is the name they asked to be called
-    names = [call_name(n) if shares(n) else ANONYMOUS for n in record["subjects"]]
+    public = record.get("origin", {}).get("channel") in PUBLIC_CHANNELS
+    names = [call_name(n) if public or shares(n) else None for n in record["subjects"]]
 
     def fill(m):
         i = int(m.group(1))
         if i >= len(names):
             return m.group(0)
-        return names[i] + (_particle(names[i], m.group(2)) if m.group(2) else "")
+        # '{s0}님의' → '페피토님의' but '한 멤버의': the honorific belongs to a name, not to '한 멤버'
+        word = ANONYMOUS if names[i] is None else names[i] + (m.group(2) or "")
+        return word + (_particle(word, m.group(3)) if m.group(3) else "")
 
     # the particle after a name was written for whichever name the model saw, but the name shown now may be
     # another one ('한 멤버'), so it is chosen again: 로하는 / 김범진은 / 한 멤버는
-    return re.sub(r"\{s(\d+)\}(은|는|이|가|을|를|과|와)?", fill, record["statement"])
+    return re.sub(r"\{s(\d+)\}(님)?(은|는|이|가|을|를|과|와)?", fill, record["statement"])
 
 
 PARTICLES = {"은": ("은", "는"), "는": ("은", "는"), "이": ("이", "가"), "가": ("이", "가"),

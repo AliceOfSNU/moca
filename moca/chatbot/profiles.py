@@ -1,6 +1,7 @@
 """Who the members are: the 가입인사 form, read into fields, plus who has been around lately.
 
-The 가입인사 template is fixed (이름 / 별칭 / 나이 / 직업 또는 분야 / 사는 곳 / 하고 싶은 말), so the harness reads
+The 가입인사 template is fixed (이름 / 별칭 / 나이 / 직업 또는 분야 / 모이기 편한 곳 / 하고 싶은 말 — intros written
+before 2026-09-21 have 사는 곳 in place of 모이기 편한 곳), so the harness reads
 it with plain parsing — no model, nothing invented. A post that doesn't follow the form is kept as raw text.
 These are posts every member can read, written for 모카 ("모카가 당신을 부를 이름입니다"), so they are treated as
 모임 public data: unlike what 모카 learns in conversation (chatbot/members.py), no 활용 범위 gate applies.
@@ -28,7 +29,7 @@ RECENT_DAYS = 14
 ME = "MOCA"
 
 FIELDS = {"이름": "name", "별칭": "nickname", "나이": "age", "직업 또는 분야": "job", "직업": "job",
-          "사는 곳": "lives", "하고 싶은 말": "message"}
+          "모이기 편한 곳": "meet", "사는 곳": "lives", "하고 싶은 말": "message"}
 # the template's own hints, which members often leave in place: "한수(모카가 당신을 부를 이름입니다.)"
 HINT = re.compile(r"\s*\((?:예시[^)]*|모카[^)]*|자유롭게)\)\s*$")
 
@@ -65,10 +66,18 @@ def region(lives):
     city = next((w for w in words if w.endswith("시") and w not in ("서울시", "서울특별시")), None)
     if city:
         return city[:-1]
-    gu = next((w for w in words if w.endswith("구")), None)
+    gu = next((w for w in words if w.endswith("구") and not w.endswith("입구")), None)  # 서울대입구는 역 이름
     if gu:
         return gu[:-1]
     return words[-1] if words else None
+
+
+def places(meet):
+    """'서울대입구, 온라인' -> ['서울대입구', '온라인']: each place someone can meet counts on its own."""
+    parts = re.split(r"\s*(?:[,/·、]|및|또는|혹은)\s*", meet or "")
+    # a meeting spot is kept as written ('서울대입구', '강남역'); only an address with a district in it
+    # ('서울 관악구') is shortened the way 사는 곳 is
+    return [region(p) if " " in p else p for p in (x.strip() for x in parts) if p]
 
 
 def _roster():
@@ -88,8 +97,8 @@ def _intros():
     for post in index.get("posts", []):
         if post["category"] != "가입인사" or post["pinned"] or post["author"] == ME:
             continue
-        path = BOARD / post["path"]
-        body = path.read_text(encoding="utf-8").split("\n\n", 1)[-1] if path.exists() else ""
+        from chatbot.posts import stored_body  # the body without the title and the 작성자/작성일 block
+        body = stored_body(post)
         out.setdefault(post["author"], {"post": post["path"], "posted": post["time"], "raw": body.strip()[:300],
                                         **parse_intro(body)})
     return out
@@ -127,7 +136,8 @@ def _build():
         out[display] = {
             "display": display, "nickname": intro.get("nickname") or display, "name": intro.get("name"),
             "born": birth_year(intro.get("age")), "job": intro.get("job"), "lives": intro.get("lives"),
-            "region": region(intro.get("lives")), "message": intro.get("message"),
+            "meet": intro.get("meet"), "region": region(intro.get("meet") or intro.get("lives")),
+            "message": intro.get("message"),
             "intro": "form" if intro.get("nickname") or intro.get("job") else ("free" if intro else None),
             "raw": intro.get("raw") if intro and not intro.get("job") else None,
             "last_seen": roster.get(display, "")[:10] or None, "recent": recent.get(display, 0)}
@@ -155,7 +165,7 @@ def _decade(year):
 def row(p):
     bits = [p["name"] if p["name"] and p["name"] != p["nickname"] else None,
             f"{p['born'] % 100:02d}년생" if p["born"] else None, p["job"],
-            f"사는 곳 {p['lives']}" if p["lives"] else None]
+            f"모이기 편한 곳 {p['meet']}" if p["meet"] else (f"사는 곳 {p['lives']}" if p["lives"] else None)]
     head = f"{p['nickname']}" + (f" (앱 이름 {p['display']})" if p["display"] != p["nickname"] else "")
     detail = " · ".join(b for b in bits if b)
     say = f" — \"{p['message'][:60]}\"" if p["message"] else (" — (자기소개 없음)" if not p["intro"] else "")
@@ -169,8 +179,11 @@ def composition_block():
     intro = [p for p in members if p["intro"]]
     active = sorted(members, key=lambda p: (p["recent"], p["last_seen"] or ""), reverse=True)
     lines = [f"## 모임 구성 (모임 채팅에서 본 적 있는 멤버 {len(members)}명 · 자기소개 {len(intro)}명 기준)",
-             "- 사는 곳 (자기소개에 적은 곳이야. 일하는 곳이나 모일 수 있는 곳과 다를 수 있으니, 이것만으로 "
-             "누가 어디까지 올 수 있는지 판단하지 마. 궁금하면 물어봐): " + _counts([p["region"] for p in intro]),
+             "- 모이기 편한 곳 (자기소개에 적은 곳): " + _counts([pl for p in intro if p["meet"] for pl in places(p["meet"])])
+             + f" — 이 칸이 생기기 전에 쓴 {sum(1 for p in intro if not p['meet'])}명은 사는 곳만 적었어: "
+             + _counts([region(p["lives"]) for p in intro if not p["meet"]])
+             + ". 사는 곳은 일하는 곳이나 모일 수 있는 곳과 다를 수 있으니, 그것만으로 누가 어디까지 올 수 있는지 "
+               "판단하지 마. 궁금하면 물어봐",
              "- 하는 일: " + _counts([p["job"] for p in intro]),
              "- 나이대: " + _counts([_decade(p["born"]) for p in intro]),
              f"- 최근 {RECENT_DAYS}일 가입 첫인사 말고 모임 채팅에 말한 멤버: "

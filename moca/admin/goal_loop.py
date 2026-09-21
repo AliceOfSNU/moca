@@ -41,13 +41,14 @@ from chatbot.profiles import MEMBER_TOOL, composition_block
 from chatbot.profiles import search as member_search
 from chatbot.post_tools import create_with_post_tools
 from harness import goals as G
-from harness import hypotheses, knowledge, tasks
+from harness import hypotheses, knowledge, sources, tasks
 
 MODEL = "gpt-6-astra"
 MAX_STEPS = 4            # steps per wake-up
 MAX_REJECTIONS = 2       # re-asks after a step the harness refused
 MAX_FOCUS_SWITCHES = 8   # goals handled in one round (a subgoal finishing hands over to its parent)
 MAX_MODIFY = 2           # modify_goals steps per wake-up (they don't count towards MAX_STEPS)
+NEW_KNOWLEDGE_SHOWN = 15 # new knowledge listed in one input; the rest is one knowledge_search away
 WRITE_TOOLS = ("create_event", "edit_event", "cancel_event", "set_attendance",
                "create_vote", "close_vote", "delete_vote", "ask_developer", "write_post")
 READ_TOOLS = ("list_events", "read_event", "list_votes", "read_vote")
@@ -89,8 +90,10 @@ GOAL_RULES = f"""
 
 ## 읽기 도구 (이 호출 안에서 바로 쓴다)
 - knowledge_search: 모임에 대해 쌓인 지식을 찾는다. 입력에는 지난 판단 이후 새로 생긴 지식만 보이니,
-  그 전의 지식이 필요하면 직접 찾아. 결과의 이름도 운영 활용을 허락한 멤버만 보인다.
-- member_search: 멤버 자기소개(부를 이름·나이·하는 일·사는 곳·한마디)와 최근 채팅 활동을 찾는다. 입력의
+  그 전의 지식이 필요하면 직접 찾아. 지식은 세 곳에서 온다: 모임 채팅 작업의 결과, 운영 활용을 허락한
+  멤버의 메모, 가입인사 자기소개. 자기소개에서 온 지식은 누구든 이름이 보이고(모두에게 공개된 글이라서),
+  그 밖의 지식은 운영 활용을 허락한 멤버만 이름이 보인다.
+- member_search: 멤버 자기소개(부를 이름·나이·하는 일·모이기 편한 곳 또는 사는 곳·한마디)와 최근 채팅 활동을 찾는다. 입력의
   [모임 구성]에는 최근 활동한 멤버만 이름으로 보이니, 다른 멤버가 궁금하면 직접 찾아.
 - list_posts, grep_search, read_file: 게시판 글 목록·검색·읽기.
 - 읽기 도구는 아무것도 바꾸지 않는다. 판단에 필요한 만큼 쓰고, 마지막에 next_step 하나를 골라.
@@ -228,6 +231,13 @@ SCHEMA = {
 
 def instructions():
     return base_prompt() + GOAL_RULES
+
+
+def _source(k):
+    """Where a knowledge record came from, in a few words."""
+    o = k["origin"]
+    return {"member_note": f"멤버 메모({o.get('context')})", "intro": "자기소개", "vote": f"투표 작업 {o.get('task')}"
+            }.get(o.get("channel"), f"작업 {o.get('task')}")
 
 
 def _knowledge_search(query=None, basis=None, since=None, subject=None, limit=20, **ignored):
@@ -374,8 +384,11 @@ class GoalLoop:
         open_ = tasks.open_tasks()
         lines += ["## 진행 중인 작업"] + ([f"- {t['id']} [{t['status']}] {t['spec']['instruction']} (목표 {t.get('goal_id')}, 마감 {t['deadline']})"
                                      for t in open_] or ["(없음)"])
-        lines += ["", "## 지난 판단 이후 새로 쌓인 지식"] + ([f"{knowledge.rendered_line(k)} [{k['id']}, 작업 {k['origin'].get('task')}]"
-                                                    for k in new] or ["(없음)"])
+        shown = new[-NEW_KNOWLEDGE_SHOWN:]  # 한꺼번에 많이 쌓여도(처음 자기소개를 옮길 때처럼) 최근 것만 보인다
+        lines += ["", "## 지난 판단 이후 새로 쌓인 지식"] + ([f"{knowledge.rendered_line(k)} [{k['id']}, {_source(k)}]"
+                                                    for k in shown] or ["(없음)"])
+        if len(new) > len(shown):
+            lines.append(f"(이번에 새로 쌓인 지식은 {len(new)}건이고 최근 {len(shown)}건만 보여. 나머지는 knowledge_search로 찾아.)")
         lines += [f"(저장된 지식은 모두 {len(knowledge.load_all())}건. 그 밖의 지식은 knowledge_search로 찾아.)", "",
                   "## 지금 잡혀 있는 정모", EventTools(self.events_ui, self.log).list_events(),
                   "", "## 진행 중인 투표", open_block(), "", composition_block(), "", hypotheses.block(),
@@ -542,6 +555,7 @@ def main():
     votes_ui = SomoimVotes(chat)
     sync_events(events_ui, log)
     sync_votes(votes_ui, log)
+    sources.sync(log)
     handled = GoalLoop(openai_client(), events_ui, log, dry_run=args.dry_run, votes_ui=votes_ui,
                        board_ui=SomoimBoard(chat)).run()
     log(f"다룬 목표: {handled or '없음'}")
