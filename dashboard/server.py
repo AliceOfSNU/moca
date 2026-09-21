@@ -236,7 +236,9 @@ def _hypotheses(names):
                         kind_label=HYPO_KINDS.get(h["kind"], h["kind"]),
                         status_label=HYPO_STATUSES.get(h["status"], h["status"]),
                         grounds_shown=[{"id": k, "statement": knowledge.get(k, "(지워진 지식)")}
-                                       for k in grounds.get("knowledge", [])]))
+                                       for k in grounds.get("knowledge", [])],
+                        evidence_shown=[dict(e, statement=knowledge.get(e["ref"], "(지금은 보이지 않는 지식 — 집계에서 빠짐)"),
+                                             visible=e["ref"] in knowledge) for e in h.get("evidence", [])]))
     return sorted(out, key=lambda h: h["created_at"], reverse=True)
 
 

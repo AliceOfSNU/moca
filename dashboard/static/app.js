@@ -301,6 +301,18 @@ function renderHypotheses() {
   }).join("")}</div>` : "";
   const live = S.hypotheses.filter((h) => h.status !== "refuted").length;
 
+  const dir = { supports: "지지", weakens: "약화" }, wt = { weak: "약", moderate: "중", strong: "강" };
+  const evidenceHtml = (h) => {
+    const ev = h.evidence_shown || [], hist = h.history || [];
+    const seen = h.reviewed_until ? `검토: ${esc(h.reviewed_until)}까지` : "아직 검토 안 됨";
+    const items = ev.map((e) => `<li class="${e.visible ? "" : "dim"}"><b>${dir[e.direction] || esc(e.direction)}·${wt[e.weight] || esc(e.weight)}</b> ${esc(e.statement)}
+      <span class="muted mono">${esc(e.ref)}</span>${e.note ? `<div class="muted">${esc(e.note)}</div>` : ""}</li>`).join("");
+    const changes = hist.map((c) => `<li>${esc(c.at)} · ${chip(c.from)} → ${chip(c.to)}${c.confidence ? ` 확신 ${esc(confLabel[c.confidence] || c.confidence)}` : ""}
+      <span class="muted">(지지 ${c.tally.nS}출처 ${c.tally.S}점 · 약화 ${c.tally.nW}출처 ${c.tally.W}점)</span><div class="muted">${esc(c.reason)}</div></li>`).join("");
+    return `<div class="hypo-line"><b>증거 ${ev.length}건</b> <span class="muted">${seen}</span></div>
+      ${items ? `<ul class="cites">${items}</ul>` : ""}
+      ${changes ? `<div class="hypo-line"><b>상태 변화</b></div><ul class="cites">${changes}</ul>` : ""}`;
+  };
   const cards = S.hypotheses.map((h) => {
     const key = `hypo:${h.id}`;
     const tags = [
@@ -314,7 +326,7 @@ function renderHypotheses() {
       <div class="hypo-line"><b>근거</b> ${esc(h.grounds?.reasoning || "")}${h.grounds?.source === "developer" ? ` <span class="muted">(개발자 관찰)</span>` : ""}</div>
       ${h.grounds_shown.length ? `<ul class="cites">${h.grounds_shown.map((k) => `<li>${esc(k.statement)} <span class="muted mono">${esc(k.id)}</span></li>`).join("")}</ul>` : ""}
       <div class="hypo-line"><b>확인 방법</b> ${esc(h.test)}</div>
-      <div class="hypo-line muted">증거 ${(h.evidence || []).length}건 (기록 단계는 아직 없음)</div>
+      ${evidenceHtml(h)}
       <details class="item" data-key="${key}" ${ui.openItems.has(key) ? "open" : ""}><summary><span class="label">원본 JSON</span></summary>
         <pre class="json">${jsonHtml(h)}</pre></details>
     </div>`;

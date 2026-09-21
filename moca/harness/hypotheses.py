@@ -4,8 +4,8 @@ Everything 모카 infers about what members want is a guess. A hypothesis makes 
 rests on, and says how it could be checked — so it can later be supported or dropped by evidence instead of
 quietly hardening into "what everyone knows".
 
-This is stage 1: creating hypotheses. Recording evidence and moving the status comes next; the fields for it
-are already here so records don't need migrating.
+Creating a hypothesis is here; linking evidence and moving the status is harness/evidence.py, which reviews every
+live hypothesis at the start of each 운영 round (a new hypothesis's first review covers all visible knowledge).
 
 One record per hypothesis in data/hypotheses/hypotheses.json:
 
@@ -149,7 +149,7 @@ def create(claim, kind, members=None, events=None, votes=None, knowledge_ids=Non
     return record, None
 
 
-def line(h):
+def line(h, tally=None):
     about = []
     if h["events"]:
         about.append("정모 " + ", ".join(h["events"]))
@@ -159,10 +159,16 @@ def line(h):
     # a hypothesis seeded from the dashboard rests on 로하's own observation, not on anything 모카 recorded
     who = "로하가 세움 · " if h["grounds"].get("source") == "developer" else ""
     reasoning = h["grounds"].get("reasoning") or ""
-    return (f"- {h['id']} [{KINDS[h['kind']]} · {STATUSES[h['status']]}{conf}] {render(h)}"
-            + (f" ({'; '.join(about)})" if about else "")
-            + f"\n  {who}근거: 지식 {len(h['grounds']['knowledge'])}건 — {reasoning[:120]}"
-            + f"\n  확인 방법: {h['test']}")
+    out = (f"- {h['id']} [{KINDS[h['kind']]} · {STATUSES[h['status']]}{conf}] {render(h)}"
+           + (f" ({'; '.join(about)})" if about else "")
+           + f"\n  {who}세운 근거: 지식 {len(h['grounds']['knowledge'])}건 — {reasoning[:120]}"
+           + f"\n  확인 방법: {h['test']}")
+    if tally is not None:
+        out += f"\n  검토된 증거: 지지 {tally['nS']}출처({tally['S']}점) · 약화 {tally['nW']}출처({tally['W']}점)"
+        last = (h.get("history") or [None])[-1]
+        if last:
+            out += f" — 최근 {last['at'][:10]}: {last['reason'][:120]}"
+    return out
 
 
 def block():
@@ -170,7 +176,9 @@ def block():
     live = sorted(active(), key=lambda h: h["updated_at"], reverse=True)
     if not live:
         return "## 모카의 가설\n(아직 없음)"
-    lines = ["## 모카의 가설 (폐기되지 않은 것, 최근 순)"] + [line(h) for h in live[:SHOWN]]
+    from harness import evidence, knowledge
+    visible = {k["id"]: k for k in knowledge.load_all()}
+    lines = ["## 모카의 가설 (폐기되지 않은 것, 최근 순)"] + [line(h, evidence.tally(h, visible)) for h in live[:SHOWN]]
     if len(live) > SHOWN:
         lines.append(f"(그 밖에 {len(live) - SHOWN}개 더 있음)")
     return "\n".join(lines)

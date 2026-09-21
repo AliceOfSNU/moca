@@ -41,7 +41,7 @@ from chatbot.profiles import MEMBER_TOOL, composition_block
 from chatbot.profiles import search as member_search
 from chatbot.post_tools import create_with_post_tools
 from harness import goals as G
-from harness import hypotheses, knowledge, sources, tasks
+from harness import evidence, hypotheses, knowledge, sources, tasks
 
 MODEL = "gpt-6-astra"
 MAX_STEPS = 4            # steps per wake-up
@@ -112,8 +112,11 @@ GOAL_RULES = f"""
   관찰한 사실이어야 해. 네 추론(inferred)을 근거로 삼으면 추측으로 추측을 받치는 셈이라 하네스가 거절한다. test에는 무엇을 보면 뒷받침되고
   무엇을 보면 약해지는지 적어. 확인할 방법이 없으면 가설이 아니야.
 - 가설은 너만 본다. 채팅 모카와 멤버에게는 보이지 않으니, 멤버에 대한 짐작을 멤버 앞에서 말할 일은 없어.
-- 가설의 상태(검증 전 → 뒷받침됨/약해짐/폐기)는 근거가 쌓이면서 바뀐다. 그 단계는 아직 없으니, 지금은
-  세우는 것까지만 해. 비슷한 가설이 이미 있으면 새로 세우지 말고 그걸 써.
+- 가설의 상태(검증 전 → 뒷받침됨·충분히 뒷받침됨 / 약해짐·폐기)는 하네스의 검토가 바꾼다. 운영 라운드가
+  시작될 때마다 새 지식을 가설과 맞춰 보고, 근거가 기준을 넘을 때만 상태를 옮긴다. 너는 상태를 직접 바꿀
+  수 없어. 입력의 [모카의 가설]에 지금 상태와 지지·약화 근거 수, 마지막으로 바뀐 이유가 보인다.
+- 가설이 뒷받침되려면 결국 확인 방법(test)대로 해 봐야 할 때가 많아. 가설을 확인할 정모나 투표를 여는 것도
+  목표를 이루는 한 방법이야. 비슷한 가설이 이미 있으면 새로 세우지 말고 그걸 써.
 
 ## 목표
 - 지금 다룰 목표는 하네스가 정해서 [지금 다루는 목표]로 표시해 준다. 그 목표에 대해서만 step을 골라.
@@ -560,6 +563,7 @@ def main():
     sync_events(events_ui, log)
     sync_votes(votes_ui, log)
     sources.sync(log)
+    evidence.review(openai_client(), log, dry_run=args.dry_run)
     handled = GoalLoop(openai_client(), events_ui, log, dry_run=args.dry_run, votes_ui=votes_ui,
                        board_ui=SomoimBoard(chat)).run()
     log(f"다룬 목표: {handled or '없음'}")
