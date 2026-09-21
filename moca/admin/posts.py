@@ -17,7 +17,7 @@ from chatbot.store import ROOT
 
 BOARD = ROOT / "data" / "board"
 ACTIONS = BOARD / "actions.jsonl"
-CATEGORY = "자유 글"        # 모카가 스스로 쓰는 글은 지금 자유 글만
+CATEGORY = "모임후기"       # 정모 글을 한곳에 모으려고 고른 칸. 후기만 쓰는 곳은 아니다
 MAX_PER_DAY = 2
 TITLE_LIMIT, BODY_LIMIT = 40, 2000
 
