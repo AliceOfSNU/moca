@@ -249,8 +249,53 @@ class SomoimEvents:
             self.ui.tap(next(n for n in crop.iter("node") if (n.get("content-desc") or n.get("text")) == "Crop"))
         return self.ui.wait_for(lambda r: first_id(r, "name_edit") is not None, timeout=20) is not None
 
-    def create(self, name, when, location, expense=0, capacity=20, notify=False):
-        """Open 정모 만들기 and create one. `when` is a datetime. Returns True once it shows on 홈."""
+    def _link_post(self, title, max_pages=8):
+        """정모 게시글 설정 → 기존 게시글 연동 → pick the post by title. The picker marks the chosen row only
+        by drawing a filled radio, which the UI tree doesn't expose, so the form's '선택된 게시글: …' is the
+        proof. Returns True when the form shows the wanted post."""
+        link = self._scroll_to("article_mode_link_layout")
+        if link is None:
+            self.log("'기존 게시글 연동'을 찾지 못함")
+            return False
+        self.ui.tap(link)
+        time.sleep(2.5)
+        if _text(first_id(self.ui.dump(), "title_text")) != "게시글 선택":
+            self.log("게시글 선택 화면이 열리지 않음")
+            return False
+        for _ in range(max_pages):
+            root = self.ui.dump()
+            rows = [n for n in root.iter("node") if rid(n) == "item_layout"]
+            wanted = next((t for t in root.iter("node")
+                           if rid(t) == "title_text" and _text(t) == title), None)
+            if wanted is not None:
+                y = bounds(wanted)[1]
+                row = next((r for r in rows if bounds(r)[1] <= y <= bounds(r)[3]), None)
+                if row is not None:
+                    self.ui.tap(row)
+                    time.sleep(1.5)
+                    break
+            if not rows:
+                break
+            self.ui.swipe(self.dev.width // 2, 1900, 900)
+            time.sleep(1.2)
+        else:
+            self.log(f"게시글 목록에서 '{title}'을 찾지 못함")
+        done = first_id(self.ui.dump(), "menu_btn_layout")
+        if done is None:
+            self.log("게시글 선택의 '완료' 버튼을 찾지 못함")
+            return False
+        self.ui.tap(done)
+        time.sleep(2.5)
+        shown = _text(first_id(self.ui.dump(), "selected_article_title")) or ""
+        if title not in shown:
+            self.log(f"게시글 연동 확인 실패: {shown!r}")
+            return False
+        self.log(f"  정모 게시글 연동: {title}")
+        return True
+
+    def create(self, name, when, location, expense=0, capacity=20, notify=False, post_title=None):
+        """Open 정모 만들기 and create one. `when` is a datetime. `post_title` links an existing post as the
+        정모's own post (기존 게시글 연동); without it the app writes its own. Returns True once it shows on 홈."""
         if self.open_home() is None:
             return False
         for _ in range(8):
@@ -289,6 +334,11 @@ class SomoimEvents:
             if box is not None:
                 self.ui.tap(box)
                 time.sleep(0.5)
+
+        if post_title and not self._link_post(post_title):
+            self.ui.back()  # 연동에 실패한 채로 만들지 않는다
+            time.sleep(2)
+            return False
 
         root = self.ui.dump()
         filled = {f: _text(first_id(root, f)) for f in ("name_edit", "date_text", "time_text", "location_edit",

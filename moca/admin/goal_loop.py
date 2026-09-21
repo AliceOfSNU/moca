@@ -27,6 +27,8 @@ import sys
 import time
 
 from admin.agent import EventTools
+from admin.posts import MAX_PER_DAY as MAX_POSTS_PER_DAY
+from admin.posts import PostTools
 from admin.events import MAX_CREATES_PER_DAY, sync_events
 from admin.votes import MAX_CREATES_PER_DAY as MAX_VOTES_PER_DAY
 from admin.votes import MAX_OPEN as MAX_OPEN_VOTES
@@ -47,14 +49,15 @@ MAX_REJECTIONS = 2       # re-asks after a step the harness refused
 MAX_FOCUS_SWITCHES = 8   # goals handled in one round (a subgoal finishing hands over to its parent)
 MAX_MODIFY = 2           # modify_goals steps per wake-up (they don't count towards MAX_STEPS)
 WRITE_TOOLS = ("create_event", "edit_event", "cancel_event", "set_attendance",
-               "create_vote", "close_vote", "delete_vote", "ask_developer")
+               "create_vote", "close_vote", "delete_vote", "ask_developer", "write_post")
 READ_TOOLS = ("list_events", "read_event", "list_votes", "read_vote")
 
 EXECUTOR_CATALOG = f"""- {{type: agent, name: chat_moca}}  모임 채팅에서 멤버들에게 묻고 답을 모아 결과(요약 + 출처 있는 지식)로 돌려준다.
     spec: instruction("무엇을 알아낼지" 한 문장), deadline_hours(1~72, 기본 24). arguments_json은 null.
 - {{type: tool, name: list_events}}      정모 목록.               arguments_json: {{}}
 - {{type: tool, name: read_event}}       정모 하나의 상세.         arguments_json: {{"name": …}}
-- {{type: tool, name: create_event}}     정모 만들기.             arguments_json: {{"name", "when": "YYYY-MM-DD HH:MM", "location", "capacity"?, "expense"?,
+- {{type: tool, name: write_post}}       게시판에 글 올리기 (정모 안내 글 등). arguments_json: {{"title", "body"}}
+- {{type: tool, name: create_event}}     정모 만들기.             arguments_json: {{"name", "when": "YYYY-MM-DD HH:MM", "location", "post_title", "capacity"?, "expense"?,
                                                                    "purpose", "mode": "offline"|"online"|"hybrid", "topic",
                                                                    "format": "talk"|"discussion"|"workshop"|"cowork"|"social", "format_note"?}}
 - {{type: tool, name: edit_event}}       모카가 만든 정모의 앱 항목이나 계획 수정. arguments_json: {{"name", "new_name"?, "location"?, "capacity"?, "expense"?,
@@ -122,6 +125,9 @@ GOAL_RULES = f"""
   출처 정리, 동의 범위, 익명 처리, 결과 형식은 하네스와 채팅 모카가 알아서 하니 instruction에 쓰지 마.
 - 정모 작업은 하네스 규칙을 따른다: 모카가 만든 정모만 수정·취소, 다른 멤버가 참석한 정모는 취소 불가,
   날짜·시간은 수정 불가, 하루 {MAX_CREATES_PER_DAY}개까지 생성. 거절되면 결과에 이유가 온다.
+- 정모에는 그 정모를 설명하는 게시글이 하나씩 반드시 있어야 한다. 순서는 이렇다: ① write_post로 무엇을 하는
+  자리인지 안내 글을 쓰고 ② create_event의 post_title에 그 글 제목을 그대로 넣는다. 하네스가 '기존 게시글
+  연동'으로 이어 준다. 글이 없으면 정모는 만들어지지 않는다. 글은 하루 {MAX_POSTS_PER_DAY}개까지 쓸 수 있다.
 - 앱의 정모에는 이름·일시·장소·비용·정원밖에 없다. 정모를 만들 때는 왜 여는지(purpose), 온·오프라인(mode),
   주제(topic), 진행 형식(format)과 진행 메모(format_note)를 계획으로 함께 남겨. 계획은 하네스가 보관하고
   채팅 모카도 보지만, 아직 멤버에게는 보이지 않는다.
@@ -232,10 +238,11 @@ def _vote_deadline(ends_at):
 
 
 class GoalLoop:
-    def __init__(self, client, events_ui, log, dry_run=False, daily_hour=10, votes_ui=None):
+    def __init__(self, client, events_ui, log, dry_run=False, daily_hour=10, votes_ui=None, board_ui=None):
         self.client = client
         self.events_ui = events_ui
         self.votes_ui = votes_ui
+        self.board_ui = board_ui
         self.log = log
         self.dry_run = dry_run
         self.daily_hour = daily_hour
@@ -464,7 +471,11 @@ class GoalLoop:
         except (ValueError, AssertionError):
             return "거절", "arguments_json은 JSON 객체여야 합니다", False, {}
         agent = f"goal:{goal['id']}"
-        if name == "ask_developer":
+        if name == "write_post":
+            if self.board_ui is None:
+                return "거절", "게시글 도구를 쓸 수 없습니다 (앱 연결 없음)", False, {}
+            tools = PostTools(self.board_ui, self.log, agent=agent, dry_run=self.dry_run)
+        elif name == "ask_developer":
             tools = DevTools(self.log, agent=agent, dry_run=self.dry_run)
         elif name in VOTE_TOOLS:
             if self.votes_ui is None:
@@ -507,6 +518,7 @@ def main():
     from cua.android import AndroidDevice
     from somoim.chat import SomoimChat
     from somoim.events import SomoimEvents
+    from somoim.board import SomoimBoard
     from somoim.votes import SomoimVotes
     log = lambda msg: print(f"{time.strftime('%H:%M:%S')} {msg}", flush=True)
     chat = SomoimChat(AndroidDevice(scale=0.5), MOIM_NAMES, log=log)
@@ -514,7 +526,8 @@ def main():
     votes_ui = SomoimVotes(chat)
     sync_events(events_ui, log)
     sync_votes(votes_ui, log)
-    handled = GoalLoop(openai_client(), events_ui, log, dry_run=args.dry_run, votes_ui=votes_ui).run()
+    handled = GoalLoop(openai_client(), events_ui, log, dry_run=args.dry_run, votes_ui=votes_ui,
+                       board_ui=SomoimBoard(chat)).run()
     log(f"다룬 목표: {handled or '없음'}")
     chat.park()
 

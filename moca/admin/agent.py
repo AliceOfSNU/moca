@@ -18,8 +18,9 @@ import time
 from chatbot.agent import ROOT, base_prompt
 from chatbot.group_task import render_summary
 from admin.events import (FORMATS, MAX_CREATES_PER_DAY, MODES, check_change, check_create, check_plan,
-                           describe_plan, drop_plan, find_event, get_plan, load_index, log_action, mark_mine,
+                           describe_plan, drop_plan, find_event, get_plan, load_index, log_action, mark_mine, remember_created,
                            rename_plan, set_plan, sync_events)
+from admin.posts import find_post
 from chatbot.members import KINDS, members_with_notes
 from chatbot.post_tools import POST_SEARCH_RULES, create_with_post_tools
 from chatbot.store import ChatStore
@@ -125,7 +126,7 @@ class EventTools:
         return json.dumps({**event, "plan": get_plan(name)}, ensure_ascii=False)
 
     # writing -------------------------------------------------------------------
-    def create_event(self, name=None, when=None, location=None, capacity=20, expense=0,
+    def create_event(self, name=None, when=None, location=None, capacity=20, expense=0, post_title=None,
                      purpose=None, mode=None, topic=None, format=None, format_note=None):
         try:
             at = dt.datetime.strptime(when, "%Y-%m-%d %H:%M")
@@ -134,14 +135,21 @@ class EventTools:
         capacity, expense = int(capacity), int(expense)
         plan = {"purpose": purpose, "mode": mode, "topic": topic, "format": format, "format_note": format_note}
         problem = check_create(name, at, location, capacity, expense) or check_plan(plan, location)
+        if not problem and not (post_title or "").strip():
+            problem = "정모에는 연동할 게시글이 있어야 합니다. write_post로 안내 글을 먼저 쓰고 그 제목을 post_title로 주세요"
+        if not problem and find_post(post_title) is None:
+            problem = (f"'{post_title}' 게시글을 찾을 수 없습니다. 모카가 쓴 글만 연동할 수 있으니 "
+                       "write_post로 먼저 쓰고, 제목을 그대로 주세요")
         if problem:
             return f"만들지 않았습니다: {problem}"
-        args = {"name": name, "when": when, "location": location, "capacity": capacity, "expense": expense}
-        result = self._run("create_event", args, lambda: self.ui.create(name, at, location, expense, capacity))
+        args = {"name": name, "when": when, "location": location, "capacity": capacity, "expense": expense,
+                "post_title": post_title}
+        result = self._run("create_event", args,
+                           lambda: self.ui.create(name, at, location, expense, capacity, post_title=post_title))
         if result.startswith("create_event 완료"):
-            mark_mine(name)
+            remember_created(name, at, location, capacity, expense)  # 바로 수정·취소할 수 있게 목록에 넣는다
             goal = self.agent[5:] if self.agent.startswith("goal:") else None
-            set_plan(name, {**{k: (v or "").strip() or None for k, v in plan.items()},
+            set_plan(name, {**{k: (v or "").strip() or None for k, v in plan.items()}, "post_title": post_title,
                             "goal_id": goal, "created_by": self.agent, "created_at": time.strftime("%Y-%m-%d %H:%M:%S")})
         return result
 
@@ -211,8 +219,11 @@ class EventTools:
                  "location": {"type": "string", "description": "장소. 온라인이면 '온라인(Google Meet)'처럼"},
                  "capacity": {"type": "integer", "description": "정원 1~60, 기본 20"},
                  "expense": {"type": "integer", "description": "비용(원), 기본 0"},
+                 "post_title": {"type": "string",
+                                "description": "이 정모를 설명하는, 모카가 write_post로 먼저 쓴 게시글의 제목. "
+                                               "그 글이 정모 게시글로 연동된다. 정모마다 하나씩 반드시 있어야 한다"},
                  **PLAN_FIELDS},
-                 "required": ["name", "when", "location", "purpose", "mode", "topic", "format"]}},
+                 "required": ["name", "when", "location", "post_title", "purpose", "mode", "topic", "format"]}},
             {"type": "function", "name": "edit_event",
              "description": "모카가 만든 정모의 이름·장소·정원·비용이나 계획을 바꾼다. 날짜와 시간은 앱에서 바꿀 수 없다. "
                             "계획만 바꾸면 앱은 건드리지 않는다.",

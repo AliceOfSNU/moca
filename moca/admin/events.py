@@ -175,6 +175,20 @@ def find_event(name):
     return next((e for e in load_index()["events"] if e["name"] == name), None)
 
 
+def remember_created(name, when, location, capacity=None, expense=0):
+    """Put a 정모 모카 just made into the index at once. Without this it only appears at the next sync, and
+    `mine` never gets set — so the harness would refuse to let 모카 edit or cancel the 정모 it just created.
+    The next sync_events replaces these fields with what the app shows and keeps `mine`."""
+    index = load_index()
+    index["events"] = [e for e in index["events"] if e["name"] != name]
+    index["events"].append({
+        "name": name, "when": when.strftime("%Y-%m-%d %H:%M"),
+        "when_text": f"{when.month}.{when.day}({'월화수목금토일'[when.weekday()]}) {when.hour}:{when.minute:02d}",
+        "location": location, "expense": str(expense), "d_day": "", "joiners": 1, "capacity": capacity,
+        "attending": True, "full": False, "mine": True, "synced_at": time.strftime("%Y-%m-%d %H:%M:%S")})
+    save_index(index)
+
+
 def mark_mine(name):
     index = load_index()
     for e in index["events"]:
@@ -189,7 +203,8 @@ def creates_today():
     today = time.strftime("%Y-%m-%d")
     return sum(1 for line in ACTIONS.read_text(encoding="utf-8").splitlines()
                if line.strip() and (a := json.loads(line))["action"] == "create_event"
-               and a["result"] == "ok" and a["at"].startswith(today))
+               and a["result"] == "ok" and a["at"].startswith(today)
+               and not a["agent"].startswith("test"))  # 개발 중 테스트는 모카의 하루치를 쓰지 않는다
 
 
 # --- rules ---------------------------------------------------------------------------

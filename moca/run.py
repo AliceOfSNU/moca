@@ -267,7 +267,7 @@ def admin_session(args, chat, client, daily=False):
     sync_votes(votes_ui, log)
     finish_vote_tasks(votes_ui, log, dry_run=args.dry_run)  # 끝난 투표의 집계를 먼저 걷어 온다
     handled = GoalLoop(client, events_ui, log, dry_run=args.dry_run, daily_hour=args.admin_hour,
-                       votes_ui=votes_ui).run(daily=daily)
+                       votes_ui=votes_ui, board_ui=SomoimBoard(chat)).run(daily=daily)
     if not handled:
         log("  지금 다룰 목표 없음")
     if daily:
