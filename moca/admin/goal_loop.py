@@ -513,7 +513,9 @@ class GoalLoop:
             if not ids or not set(ids) <= open_ids:
                 return "거절", f"기다릴 수 있는 작업은 진행 중인 작업뿐입니다: {sorted(open_ids) or '없음'}", False, {}
             if not self.dry_run:
-                G.update(focus_id, wait={"type": "task_terminal", "task_ids": ids, "since": tasks.now()})
+                # a wait replaces any earlier rest: the goal wakes when its tasks finish, not when an old cooldown ends
+                G.update(focus_id, wait={"type": "task_terminal", "task_ids": ids, "since": tasks.now()},
+                         cooldown_until=None)
             return "대기", f"{ids}가 끝나면 다시 깨움", True, {}
         # propose_goal_outcome
         status, outcome = step.get("proposed_status"), step.get("outcome")
