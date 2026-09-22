@@ -13,9 +13,12 @@ confirmed when the program is created. If a grounding hypothesis later drops bel
 automatically — the program is flagged, for 운영 모카 and on the dashboard, and whoever runs it decides.
 
 A program is created with its plan null — `recurring.activity_template` or `linear.sketch`. The planner
-(harness/planner.py) fills it at a later 운영 round; 운영 모카 only sees it. Activities (the concrete 정모 built from
-the plan) are the next stage; until then a program is `planned`. Programs are internal: members don't see them,
-and 모카 doesn't mention them in the chat.
+(harness/planner.py) fills it at the end of a 운영 round; 운영 모카 only sees it.
+
+Every 정모 모카 opens is an Activity of a program (see check_activity): create_event names the program, and the
+harness refuses it unless the program is planned or active and has its plan. The first activity makes a planned
+program active. A one-off 정모 is a recurring program that repeats once. Programs are internal: members don't
+see them, and 모카 doesn't mention them in the chat.
 
 One record per program in data/programs/programs.json:
 
@@ -232,6 +235,114 @@ def create(type=None, title=None, purpose=None, hypotheses=None, reasoning=None,
     return record, None
 
 
+# --- activities: every 정모 모카 opens is one ------------------------------------------------------------
+# A 정모 is always an Activity of a program: create_event names the program (and, for a linear program, the
+# stage), and the harness refuses a 정모 whose program isn't running, has no plan yet, has used up its repeats,
+# or whose stage would skip ahead. A one-off 정모 (a 친목 번개) is a recurring program that repeats once.
+# Each activity: {"event", "when", "session" | "stage", "post_title", "status": "scheduled"|"canceled", …}.
+
+OPEN_FOR_ACTIVITIES = ("planned", "active")
+PLAN_MODES = {"offline": ("offline",), "online": ("online",), "either": ("offline", "online", "hybrid")}
+
+
+def plan_of(p):
+    return p["recurring"]["activity_template"] if p["type"] == "recurring" else p["linear"]["sketch"]
+
+
+def live_activities(p):
+    return [a for a in p.get("activities", []) if a["status"] != "canceled"]
+
+
+def check_activity(program_id, stage=None, mode=None):
+    """May a 정모 for this program be opened now? Returns (program, None) or (None, why not)."""
+    p = next((x for x in load() if x["id"] == program_id), None) if program_id else None
+    if not program_id:
+        return None, ("모든 정모는 프로그램의 활동이어야 합니다. program_id를 주세요. 맞는 프로그램이 없으면 "
+                      "propose_program으로 먼저 만드세요 (한 번뿐인 친목 모임도 반복 1회짜리 정기 프로그램으로)")
+    if p is None:
+        return None, f"없는 프로그램입니다: {program_id}"
+    if p["status"] not in OPEN_FOR_ACTIVITIES:
+        return None, f"프로그램 {program_id}는 지금 '{STATUSES[p['status']]}' 상태라 정모를 열 수 없습니다"
+    plan = plan_of(p)
+    if plan is None:
+        return None, (f"프로그램 {program_id}의 기획({'템플릿' if p['type'] == 'recurring' else '스케치'})이 아직 "
+                      "없습니다. 하네스가 운영 회차 끝에 채우고, 채워지면 이 목표를 깨웁니다. 그 뒤에 정모를 여세요")
+    acts = live_activities(p)
+    if p["type"] == "recurring":
+        if stage is not None:
+            return None, "정기 프로그램의 정모에는 stage를 쓰지 않습니다 (회차는 하네스가 셉니다)"
+        rep = p["recurring"]["repeats"]
+        if rep["kind"] == "constant" and len(acts) >= rep["count"]:
+            return None, f"프로그램 {program_id}는 {rep['count']}회로 정해져 있고 이미 {len(acts)}회를 열었습니다"
+        allowed = PLAN_MODES[plan["mode"]]
+    else:
+        stages = plan["stages"]
+        if not isinstance(stage, int) or not 1 <= stage <= len(stages):
+            return None, f"단계형 프로그램의 정모에는 stage(1~{len(stages)})가 필요합니다: 스케치의 몇 단계인지"
+        reached = max((a["stage"] for a in acts), default=0)
+        if stage > reached + 1:
+            return None, f"{reached + 1}단계를 건너뛰고 {stage}단계를 열 수 없습니다. 단계는 순서대로 엽니다"
+        now = time.strftime("%Y-%m-%d %H:%M")
+        if any(a["stage"] == stage and a["when"] > now for a in acts):
+            return None, f"{stage}단계 정모가 이미 잡혀 있습니다"
+        allowed = PLAN_MODES[stages[stage - 1]["mode"]]
+    if mode and mode not in allowed:
+        return None, (f"기획은 {plan['mode'] if p['type'] == 'recurring' else stages[stage - 1]['mode']}인데 "
+                      f"정모의 mode가 {mode}입니다. 기획을 따르거나, 기획을 다시 써 달라고 로하에게 부탁하세요")
+    return p, None
+
+
+def add_activity(program_id, event, when, stage=None, post_title=None, goal_id=None, created_by="admin"):
+    """Record a 정모 that was just created as an activity. The first one starts the program."""
+    records = load()
+    p = next(x for x in records if x["id"] == program_id)
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    act = {"event": event, "when": when, "post_title": post_title, "status": "scheduled", "goal_id": goal_id,
+           "created_by": created_by, "created_at": now}
+    if p["type"] == "recurring":
+        act["session"] = len(live_activities(p)) + 1
+    else:
+        act["stage"] = stage
+    p.setdefault("activities", []).append(act)
+    if p["status"] == "planned":
+        p.setdefault("history", []).append({"at": now, "from": "planned", "to": "active",
+                                            "reason": f"첫 활동: '{event}'"})
+        p["status"] = "active"
+        p["started_at"] = now
+    p["updated_at"] = now
+    save(records)
+    return act
+
+
+def _each_activity(event):
+    records = load()
+    for p in records:
+        for a in p.get("activities", []):
+            if a["event"] == event and a["status"] != "canceled":
+                yield records, p, a
+
+
+def cancel_activity(event, reason=None):
+    for records, p, a in _each_activity(event):
+        a.update(status="canceled", canceled_at=time.strftime("%Y-%m-%d %H:%M:%S"), canceled_reason=reason)
+        p["updated_at"] = a["canceled_at"]
+        save(records)
+        return True
+    return False
+
+
+def rename_activity(old, new):
+    for records, p, a in _each_activity(old):
+        a["event"] = new
+        save(records)
+        return True
+    return False
+
+
+def program_of_event(event):
+    return next(((p, a) for _, p, a in _each_activity(event)), (None, None))
+
+
 def flags(p, by_id=None):
     """Why this program's grounds look shaky now: a grounding hypothesis that fell below supported, or is gone."""
     from harness import hypotheses as H
@@ -282,7 +393,21 @@ def line(p, by_id=None):
         out += f"\n  스케치 v{plan['version']}: {plan['summary']}" + "".join(
             f"\n    {st['n']}. (day {st['day']}) {st['title']} → {st['exit_state']}" for st in plan["stages"])
     else:
-        out += "\n  (기획은 아직 — 하네스가 운영 라운드에 채운다)"
+        out += "\n  (기획은 아직 — 하네스가 운영 라운드에 채운다. 채워지기 전에는 정모를 열 수 없다)"
+    acts = live_activities(p)
+    for a in acts:
+        which = f"{a['session']}회차" if "session" in a else f"{a['stage']}단계"
+        out += f"\n  활동 {which}: 정모 '{a['event']}' {a['when']}"
+    if plan:
+        if p["type"] == "recurring":
+            rep = p["recurring"]["repeats"]
+            left = f" (남은 횟수 {rep['count'] - len(acts)})" if rep["kind"] == "constant" else ""
+            out += f"\n  다음 정모는 {len(acts) + 1}회차{left}" if rep["kind"] != "constant" or len(acts) < rep["count"] \
+                else "\n  정해진 횟수를 모두 열었다"
+        else:
+            reached = max((a["stage"] for a in acts), default=0)
+            if reached < len(plan["stages"]):
+                out += f"\n  다음 정모는 {reached + 1}단계: {plan['stages'][reached]['title']}"
     for f in flags(p, by_id):
         out += f"\n  ⚠ {f} — 이 프로그램을 계속할지 다시 볼 것"
     return out
@@ -326,7 +451,8 @@ TOOL = {
         "duration_days": {"type": "integer", "description": "단계형만: 전체 기간(일)"},
         "interval_days": {"type": "integer", "description": "정기만: 대략 며칠마다 반복하는지. 정확히 지킬 필요는 없다"},
         "repeat_kind": {"type": "string", "enum": list(REPEAT_KINDS),
-                        "description": "정기만: constant=정해진 횟수, conditional=조건이 맞는 동안, infinite=끝없이"},
+                        "description": "정기만: constant=정해진 횟수, conditional=조건이 맞는 동안, infinite=끝없이. "
+                                       "한 번뿐인 정모(친목 번개 등)는 constant에 repeat_count 1"},
         "repeat_count": {"type": "integer", "description": "정기이고 constant일 때만: 횟수"},
         "repeat_condition": {"type": "string", "description": "정기이고 conditional일 때만: 언제까지 이어가거나 멈추는지"},
         "format": {"type": "string",
@@ -355,8 +481,9 @@ class Proposals:
             return f"프로그램을 만들지 않았습니다: {problem}"
         if self.log:
             self.log(f"  프로그램 {record['id']}: {show(record, record['title'])}")
-        return (f"프로그램 {record['id']}를 만들었습니다 (상태: 계획됨). 기획(템플릿·스케치)은 하네스가 다음 운영 "
-                "라운드에 채웁니다. 멤버에게는 보이지 않습니다.")
+        return (f"프로그램 {record['id']}를 만들었습니다 (상태: 계획됨). 기획(템플릿·스케치)은 하네스가 이번 운영 "
+                "회차 끝에 채우고, 채워지면 이 목표를 깨웁니다. 정모는 그 뒤에 이 program_id로 엽니다. "
+                "멤버에게는 보이지 않습니다.")
 
 
 def main():

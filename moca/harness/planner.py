@@ -473,7 +473,20 @@ def run(client, log=None, dry_run=False, program_id=None):
         if log:
             log(f"  {kind} v{plan['version']} 저장: {plan['summary'][:100]}")
     P.save(records)
+    if not problems and p.get("goal_id"):
+        _wake(p["goal_id"], log)
     return p["id"]
+
+
+def _wake(goal_id, log=None):
+    """The goal that made this program was waiting for its plan (a 정모 can't be opened without one): let it take
+    a step at the next idle moment instead of sleeping until its cooldown ends."""
+    from harness import goals as G
+    goal = next((g for g in G.load() if g["id"] == goal_id), None)
+    if goal and goal["status"] == "active" and goal.get("cooldown_until"):
+        G.update(goal_id, cooldown_until=None)
+        if log:
+            log(f"  기획이 채워져 목표 {goal_id}를 깨움")
 
 
 def main():

@@ -482,6 +482,14 @@ function planHtml(p) {
     <div class="muted" style="font-size:12px">${esc(t.created_at)}${t.note ? ` · 요청 메모: ${esc(t.note)}` : ""}${hist ? ` · 이전 버전 ${hist}개` : ""}</div></div>`;
 }
 
+function activitiesHtml(p) {
+  const acts = p.activities || [];
+  if (!acts.length) return `<div class="hypo-line muted" style="font-size:12px"><b>활동</b> 아직 연 정모 없음</div>`;
+  return `<div class="hypo-line"><b>활동 (정모 ${acts.filter((a) => a.status !== "canceled").length})</b></div>
+    <ul class="cites">${acts.map((a) => `<li class="${a.status === "canceled" ? "dim" : ""}">${a.session ? `${a.session}회차` : `${a.stage}단계`} ·
+      <b>${esc(a.event)}</b> ${esc(a.when)}${a.status === "canceled" ? ` <span class="muted">(취소: ${esc(a.canceled_reason || "")})</span>` : ""}</li>`).join("")}</ul>`;
+}
+
 function rewriteHtml(p) {
   if (!["planned", "active", "paused"].includes(p.status)) return "";
   if (p.plan_request) return `<div class="note ok">다시 작성 요청됨 (${esc(p.plan_request.at)})${p.plan_request.note ? `: ${esc(p.plan_request.note)}` : ""} — 다음 운영 라운드에 반영</div>`;
@@ -520,6 +528,7 @@ function programCard(p) {
     <div class="hypo-line"><b>존재 근거</b> ${esc(sh.reasoning)}</div>
     <ul class="cites">${grounds}</ul>
     ${planHtml(p)}
+    ${activitiesHtml(p)}
     ${rewriteHtml(p)}
     ${ui.planMsg && ui.planMsg.id === p.id ? `<div class="note ${ui.planMsg.ok ? "ok" : "err"}">${esc(ui.planMsg.text)}</div>` : ""}
     <details class="item" data-key="${key}" ${ui.openItems.has(key) ? "open" : ""}><summary><span class="label">원본 JSON</span></summary>
