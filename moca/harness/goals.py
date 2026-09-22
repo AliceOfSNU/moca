@@ -217,6 +217,9 @@ def focus(goals=None, now=None):
         open_children = [c for c in children(goals, goal) if c["status"] not in FINISHED]
         if open_children:
             return pick(open_children[0])  # one subgoal at a time, in creation order
+        from harness import devmail
+        if devmail.new_answers(goal):
+            return goal  # 로하 answered a request this goal made: it wakes even while waiting or resting
         if goal.get("cooldown_until") and now < goal["cooldown_until"]:
             return None
         return goal if wait_over(goal) else None

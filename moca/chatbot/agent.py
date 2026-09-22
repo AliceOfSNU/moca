@@ -7,7 +7,6 @@ import re
 from chatbot.config import MOIM_NAME
 from chatbot.member_tool import RECORDING_RULES, TOOL as MEMBER_TOOL, MemberNotes
 from chatbot.post_tools import POST_SEARCH_RULES, create_with_post_tools
-from harness.devmail import TOOL as DEV_TOOL, DeveloperRequests
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 MODEL = "gpt-6-astra"
@@ -176,9 +175,8 @@ class ChatAgent:
         """Let 모카 record what members said about themselves — but only about people who spoke just now."""
         senders = set(senders or ()) | {m["sender"] for group in (msgs.values() if isinstance(msgs, dict) else [msgs])
                                         for m in group if answerable(m)}
-        return {"extra_tools": [MEMBER_TOOL, DEV_TOOL],
-                "handlers": {"propose_member_data": MemberNotes(allowed=senders, context="group", log=self.log),
-                             "ask_developer": DeveloperRequests(asked_by="group_chat", log=self.log)}}
+        return {"extra_tools": [MEMBER_TOOL],
+                "handlers": {"propose_member_data": MemberNotes(allowed=senders, context="group", log=self.log)}}
 
     def join_in(self, history, new_msgs):
         """Nobody called 모카. Let it decide whether joining in is worth it.

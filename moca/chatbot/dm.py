@@ -14,7 +14,7 @@ import sys
 import time
 
 from chatbot.agent import ACCOUNT_NAME, base_prompt, format_line, plain_text
-from chatbot.config import MOIM_NAMES
+from chatbot.config import DEVELOPER, MOIM_NAMES
 from chatbot.member_tool import RECORDING_RULES, TOOL as MEMBER_TOOL, MemberNotes
 from chatbot.members import notes_block
 from chatbot.profiles import own_block
@@ -24,8 +24,7 @@ from chatbot.memory_consent import (ask_prompt, awaiting, classify, due, mark_as
 from chatbot.post_tools import POST_SEARCH_RULES, create_with_post_tools
 from chatbot.store import ROOT, ChatStore
 from chatbot import tips
-from harness import stardust
-from harness.devmail import TOOL as DEV_TOOL, DeveloperRequests
+from harness import devmail, stardust
 from harness.presence import status_block
 from cua.agent import openai_client
 from cua.android import AndroidDevice
@@ -104,9 +103,8 @@ class DMAgent:
             prompt += f"\n\n참고: {note}"
         prompt += f"\n\n마지막 메시지들에 이어서 '{member}'님에게 보낼 답장 하나만 써. 답장 텍스트만 출력해."
         resp = create_with_post_tools(self.client, log=self.log, tools=[{"type": "web_search"}],
-                                      extra_tools=[MEMBER_TOOL, DEV_TOOL],
-                                      handlers={"propose_member_data": MemberNotes(member=member, context="dm", log=self.log),
-                                                "ask_developer": DeveloperRequests(asked_by=f"dm:{member}", log=self.log)},
+                                      extra_tools=[MEMBER_TOOL],
+                                      handlers={"propose_member_data": MemberNotes(member=member, context="dm", log=self.log)},
                                       model=self.model, reasoning=self.reasoning,
                                       instructions=dm_prompt(member), input=prompt)
         return plain_text(resp.output_text)
@@ -320,6 +318,18 @@ def converse(dm, agent, log, dry_run=False, open_profile=None):
     unanswered = [m for m in msgs if not m["mine"] and not store.answered(m)]
     if not msgs or msgs[-1]["mine"] or not unanswered:
         return False
+    issues = [c for m in unanswered if (c := devmail.parse_command(m["text"]))] if dm.member == DEVELOPER else []
+    if issues:
+        # 로하's answer to 모카's request #n: the harness records it for 운영 모카 and confirms; no model reads it
+        replies = []
+        for n, text in issues:
+            reply, record = devmail.handle_command(n, text)
+            log(f"{dm.member}님이 '/issue {n if n is not None else ''}' 입력 → " + (f"#{n}의 답으로 기록" if record else reply))
+            replies.append(reply)
+        if not dry_run:
+            store.mark_answered(unanswered)
+        sent = dm.send("\n".join(replies), dry_run=dry_run)
+        return bool(sent) and not dry_run
     command = next((c for m in reversed(unanswered) if (c := stardust.parse_command(m["text"]))), None)
     if command:
         # 별조각은 하네스의 것이라 모델을 거치지 않고 하네스가 바로 답한다 (documents/stardust.md)

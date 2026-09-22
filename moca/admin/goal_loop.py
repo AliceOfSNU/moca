@@ -41,7 +41,7 @@ from chatbot.profiles import MEMBER_TOOL, composition_block
 from chatbot.profiles import search as member_search
 from chatbot.post_tools import create_with_post_tools
 from harness import goals as G
-from harness import evidence, hypotheses, knowledge, planner, programs, sources, tasks
+from harness import devmail, evidence, hypotheses, knowledge, planner, programs, sources, tasks
 
 MODEL = "gpt-6-astra"
 MAX_STEPS = 4            # steps per wake-up
@@ -197,7 +197,9 @@ GOAL_RULES = f"""
 - 투표를 올리면 하네스가 '결과를 기다리는 작업'을 하나 열어 주고 그 id를 알려 준다. 그 작업을 wait하면
   투표가 끝났을 때 항목별 집계와 함께 깨워 준다. 투표를 열어 놓고 목표를 닫지 마.
 - 네가 할 수 없는 일이 목표에 필요하면 포기하기 전에 ask_developer로 하네스에 무엇이 필요한지 적어 보내라.
-  하루 {MAX_DEV_REQUESTS}건까지고, 답은 로하가 1:1로 보내온다. 멤버에게는 아직 없는 기능을 약속하지 마.
+  하루 {MAX_DEV_REQUESTS}건까지다. 개발자에게 요청할 수 있는 건 너(운영 모카)뿐이다. 요청에는 하네스가 번호(#2)를
+  붙이고, 로하가 그 번호로 답하면 입력의 [개발자 요청]에 답이 보이고 이 목표가 깨어난다 — 다른 작업을 기다리는
+  중이어도. 답을 기다리는 동안 같은 요청을 다시 보내지 마. 멤버에게는 아직 없는 기능을 약속하지 마.
 - 도구 작업(type: tool)은 바로 끝나고 결과가 다음 판단 때 보인다. 에이전트 작업(chat_moca)은 몇 시간이
   걸릴 수 있으니, 시작한 뒤에는 보통 그 작업을 wait한다.
 
@@ -340,7 +342,11 @@ class GoalLoop:
         kids = G.children(G.load(), goal)
         # its subgoals finished since this goal last acted (e.g. after it split itself with modify_goals)
         after_children = bool(kids) and (first or max(k.get("finished_at") or "" for k in kids) >= own_steps[-1]["at"])
+        answered = devmail.new_answers(goal)
         reason = self._collect_results(goal) or (
+            f"로하가 개발자 요청에 답함 ({', '.join(f'#{devmail.number(r)}' for r, _ in answered)}) — [개발자 요청]을 보고 "
+            + ("다시 판단할 차례. 기다리던 작업은 아직 진행 중이다" if goal.get("wait") else "다시 판단할 차례")
+            if answered else
             "하위 목표가 모두 끝남 — 이제 이 목표 자신의 기준을 확인할 차례" if after_children else
             "첫 실행" if first else "매일 점검" if daily else "다시 판단할 차례")
         self.log(f"운영 모카 ▶ 목표 {goal['id']} ({goal['objective']}) — {reason}")
@@ -380,7 +386,7 @@ class GoalLoop:
     def _collect_results(self, goal):
         """If this goal's wait is over, hand over the results (and consume the tasks). Returns the wake reason."""
         wait = goal.get("wait")
-        if not wait:
+        if not wait or not G.wait_over(goal):  # woken early (a developer answer): the wait stays as it is
             return None
         lines = []
         for task_id in wait["task_ids"]:
@@ -435,6 +441,7 @@ class GoalLoop:
         lines += [f"(저장된 지식은 모두 {len(knowledge.load_all())}건. 그 밖의 지식은 knowledge_search로 찾아.)", "",
                   "## 지금 잡혀 있는 정모", EventTools(self.events_ui, self.log).list_events(),
                   "", "## 진행 중인 투표", open_block(), "", composition_block(), "", hypotheses.block(), "", programs.block(),
+                  "", devmail.block(goal),
                   "", "다음 step 하나를 골라."]
         return "\n".join(lines)
 

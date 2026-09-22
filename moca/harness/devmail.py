@@ -1,10 +1,16 @@
 """모카 → 개발자(로하) 1:1. The one exception to "모카 never writes first in a 1:1".
 
 모카 can't change its own harness: a new command, a new tool, a higher limit is code 로하 writes. So it
-may ask — but only 로하, and only through this queue. The model writes the request, the harness rate-limits
-it and sends it from the DM session (run.py). Every other member still has to write first.
+may ask — but only 로하, only through this queue, and only 운영 모카 (the goal loop's ask_developer): chat 모카
+and 1:1 모카 don't file requests. The model writes the request, the harness rate-limits it and sends it from
+the DM session (run.py), numbered: "#2". Every other member still has to write first.
+
+로하 answers with `/issue 2 …` in the 1:1 (the number is required). The harness records the answer on the
+request, confirms in one line, and the goal that asked wakes up — even while it waits on a task — with the
+answer in its input ([개발자 요청]). Nothing of this goes through a model.
 """
 import json
+import re
 import time
 
 from chatbot.config import DEVELOPER
@@ -56,8 +62,80 @@ def request(text, kind="feature", why="", asked_by="chat"):
               "text": text, "why": (why or "").strip()[:MAX_LEN], "asked_by": asked_by, "status": "queued"}
     records.append(record)
     _save(records)
-    return (f"{DEVELOPER}님에게 보낼 요청으로 저장했습니다 ({record['id']}). 다음 1:1 점검 때 전달되고, "
-            "답은 로하가 1:1로 보내옵니다. 멤버에게 이미 전달된 것처럼 말하지 마세요.")
+    return (f"{DEVELOPER}님에게 보낼 요청으로 저장했습니다 (#{number(record)}). 다음 1:1 점검 때 전달되고, "
+            "답이 오면 [개발자 요청]에 보이고 이 목표가 깨어납니다. 멤버에게 이미 전달된 것처럼 말하지 마세요.")
+
+
+def number(record):
+    return int(record["id"][1:])
+
+
+def answer(n, text):
+    """Record 로하's answer to request #n. Returns (record, None) or (None, why not)."""
+    records = _load()
+    r = next((x for x in records if number(x) == n), None)
+    if r is None:
+        return None, f"#{n} 요청은 없어요."
+    if r["status"] == "queued":
+        return None, f"#{n} 요청은 아직 보내지 않았어요."
+    r.setdefault("answers", []).append({"at": time.strftime("%Y-%m-%d %H:%M:%S"), "text": text})
+    r["status"] = "answered"
+    _save(records)
+    return r, None
+
+
+ISSUE = re.compile(r"^\s*/issue(?:\s+#?(\d+))?(?:\s+(.*))?\s*$", re.S)
+
+
+def parse_command(text):
+    """'/issue 2 고쳤어' -> (2, '고쳤어'); '/issue' or '/issue 고쳤어' -> (None, …); anything else -> None."""
+    m = ISSUE.match(text or "")
+    if not m:
+        return None
+    return (int(m.group(1)) if m.group(1) else None), (m.group(2) or "").strip()
+
+
+def handle_command(n, text):
+    """What the harness answers in 로하's 1:1. Returns (reply, the answered record or None)."""
+    waiting = [f"#{number(r)}" for r in _load() if r["status"] == "sent"]
+    usage = "형식: /issue 번호 답 (예: /issue 2 고쳤어)" + (f". 답을 기다리는 요청: {', '.join(waiting)}" if waiting else "")
+    if n is None:
+        return f"번호가 필요해요. {usage}", None
+    if not text:
+        return f"#{n}에 대한 답이 비어 있어요. {usage}", None
+    record, problem = answer(n, text)
+    if problem:
+        return f"{problem} {usage}", None
+    return f"#{n}에 대한 답으로 기록했어요. 운영 모카가 확인할게요.", record
+
+
+def for_goal(goal_id):
+    return [r for r in _load() if r.get("asked_by") == f"goal:{goal_id}"]
+
+
+def new_answers(goal):
+    """Answers to this goal's requests that came after its last step: they wake it."""
+    since = goal.get("last_step_at") or ""
+    return [(r, a) for r in for_goal(goal["id"]) for a in r.get("answers", []) if a["at"] > since]
+
+
+def block(goal, limit=8):
+    """For 운영 모카's input: its requests to 로하 and the answers, newest first."""
+    recent = sorted(_load(), key=lambda r: r["at"], reverse=True)[:limit]
+    if not recent:
+        return "## 개발자 요청\n(없음)"
+    since = goal.get("last_step_at") or ""
+    status = {"queued": "보내기 전", "sent": "답 기다리는 중", "failed": "보내지 못함", "answered": "답 옴"}
+    lines = ["## 개발자 요청 (로하에게 보낸 것, 최근 순)"]
+    for r in recent:
+        by = r.get("asked_by") or ""
+        # before 2026-09-22 chat 모카 and 1:1 모카 could file requests too; those records keep their origin
+        where = ("이 목표" if by == f"goal:{goal['id']}" else f"다른 목표 {by[5:]}" if by.startswith("goal:")
+                 else "예전에 모임 채팅 모카가" if by == "group_chat" else "예전에 1:1 모카가" if by.startswith("dm:") else by)
+        lines.append(f"- #{number(r)} [{status.get(r['status'], r['status'])}] ({where}, {r['at'][:16]}) {r['text'][:200]}")
+        for a in r.get("answers", []):
+            lines.append(f"  {'★ 새 답' if a['at'] > since else '답'} ({a['at'][:16]}): {a['text']}")
+    return "\n".join(lines)
 
 
 def mark(record_id, sent):
@@ -71,43 +149,11 @@ def mark(record_id, sent):
 
 def message(record):
     """How the request reads in the 1:1: 모카's own words, with the harness saying where it came from."""
-    head = f"[모카 → 개발자] {KINDS[record['kind']]}"
+    n = number(record)
+    head = f"[모카 → 개발자] #{n} {KINDS[record['kind']]}"
     body = record["text"]
     why = f"\n\n이유: {record['why']}" if record["why"] else ""
-    return f"{head}\n\n{body}{why}"
-
-
-TOOL = {
-    "type": "function",
-    "name": "ask_developer",
-    "description": f"하네스(너를 움직이는 프로그램)를 바꿔야 할 일을 개발자 {DEVELOPER}에게 1:1로 요청한다. "
-                   "새 명령어·도구·기능, 제한 조정, 이상 동작 제보에 쓴다. 네가 지금 할 수 없는 일을 "
-                   "멤버에게 약속하는 대신 여기로 보내라. 대화 상대에게 할 대답을 대신하지는 못한다.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": f"요청 내용. {MAX_LEN}자 이내, 무엇이 필요한지 구체적으로"},
-            "kind": {"type": "string", "enum": list(KINDS),
-                     "description": "feature=새 기능·도구, limit=제한 조정, bug=이상 동작, question=질문"},
-            "why": {"type": "string", "description": "왜 필요한지 한두 문장 (어떤 대화·상황에서 나왔는지)"},
-        },
-        "required": ["text", "kind"],
-    },
-}
-
-
-class DeveloperRequests:
-    """Tool handler: the model asks, the harness queues."""
-
-    def __init__(self, asked_by="chat", log=None):
-        self.asked_by = asked_by
-        self.log = log
-
-    def __call__(self, text=None, kind="feature", why=""):
-        reply = request(text, kind=kind, why=why, asked_by=self.asked_by)
-        if self.log:
-            self.log(f"  개발자 요청 ({kind}): {text} → {reply}")
-        return reply
+    return f"{head}\n\n{body}{why}\n\n(답은 /issue {n} …)"
 
 
 class GoalTools:
