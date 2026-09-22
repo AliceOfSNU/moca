@@ -145,8 +145,10 @@ def check_create(title, options, ends_at, open_votes):
         return f"투표 제목은 1~{TITLE_LIMIT}자여야 합니다"
     if not MIN_OPTIONS <= len(options) <= MAX_OPTIONS:
         return f"항목은 {MIN_OPTIONS}~{MAX_OPTIONS}개여야 합니다"
-    if any(not o or len(o) > OPTION_LIMIT for o in options):
-        return f"항목은 각각 1~{OPTION_LIMIT}자여야 합니다"
+    long = [f"{o} ({len(o)}자)" for o in options if len(o) > OPTION_LIMIT]
+    if long or not all(options):
+        return (f"항목은 각각 1~{OPTION_LIMIT}자여야 합니다 (앱의 항목 칸이 {OPTION_LIMIT}자까지만 받습니다)"
+                + (f". 너무 긴 항목: {', '.join(long)}" if long else ""))
     if len(set(options)) != len(options):
         return "같은 항목을 두 번 넣을 수 없습니다"
     if ends_at is not None:

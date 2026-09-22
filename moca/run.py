@@ -269,11 +269,13 @@ def admin_session(args, chat, client, daily=False):
     if not args.dry_run:
         sources.sync(log)  # 허락된 멤버 메모와 자기소개를 지식으로 (바뀐 것만)
         evidence.review(client, log)  # 새 지식을 가설과 맞춰 보고 상태를 고친다 (운영 모카가 판단하기 전에)
-        planner.run(client, log)  # 기획이 빈(또는 다시 써 달라는) 프로그램 하나의 템플릿·스케치를 채운다
     handled = GoalLoop(client, events_ui, log, dry_run=args.dry_run, daily_hour=args.admin_hour,
                        votes_ui=votes_ui, board_ui=SomoimBoard(chat)).run(daily=daily)
     if not handled:
         log("  지금 다룰 목표 없음")
+    if not args.dry_run:
+        # 운영 모카가 이번에 만든 프로그램도 같은 회차에 기획되도록, 목표 루프 뒤에 (한 번에 하나)
+        planner.run(client, log)  # 기획이 빈(또는 다시 써 달라는) 프로그램 하나의 템플릿·스케치를 채운다
     if daily:
         log("별조각 일일 정산 (투표·정모 참여)")
         stardust.sweep(events_ui, votes_ui, log, dry_run=args.dry_run)

@@ -296,6 +296,12 @@ class SomoimEvents:
     def create(self, name, when, location, expense=0, capacity=20, notify=False, post_title=None):
         """Open 정모 만들기 and create one. `when` is a datetime. `post_title` links an existing post as the
         정모's own post (기존 게시글 연동); without it the app writes its own. Returns True once it shows on 홈."""
+        # the whole form under ADBKeyBoard: see SomoimVotes.create (a normal keyboard popping up between fields
+        # turns the scroll to 저장 into typing)
+        with self.dev.adb_keyboard():
+            return self._create(name, when, location, expense, capacity, notify, post_title)
+
+    def _create(self, name, when, location, expense, capacity, notify, post_title):
         if self.open_home() is None:
             return False
         for _ in range(8):
@@ -358,6 +364,10 @@ class SomoimEvents:
 
     def edit(self, name, new_name=None, location=None, expense=None, capacity=None):
         """Change a 정모's editable fields (date and time cannot be changed). Returns True on success."""
+        with self.dev.adb_keyboard():  # see create
+            return self._edit(name, new_name, location, expense, capacity)
+
+    def _edit(self, name, new_name, location, expense, capacity):
         card = self._find_card(name)
         if card is None or card["edit_node"] is None:
             self.log(f"'{name}' 정모의 수정 버튼을 찾지 못함 (운영진만 수정할 수 있음)")

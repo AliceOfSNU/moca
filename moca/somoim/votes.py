@@ -18,7 +18,7 @@ from somoim.events import SomoimEvents  # the date and time dialogs are the ones
 from somoim.ui import bounds, by_text, first_id, rid
 
 MIN_OPTIONS, MAX_OPTIONS = 2, 10
-TITLE_LIMIT, OPTION_LIMIT = 60, 40
+TITLE_LIMIT, OPTION_LIMIT = 60, 20  # an option field holds 20 characters (measured 2026-09-22)
 
 
 def _text(node):
@@ -181,6 +181,13 @@ class SomoimVotes:
 
     def create(self, title, options, ends_at=None, multi=False, anonymous=False):
         """Post a new vote. `ends_at` is a datetime (the app defaults to two days out at 00:30)."""
+        # ADBKeyBoard (no on-screen keys) is held for the whole form. Switching back to the normal keyboard
+        # between steps pops it up over the focused field, and the scroll swipes that follow land on its keys
+        # and type into the form instead of scrolling it.
+        with self.dev.adb_keyboard():
+            return self._create(title, options, ends_at, multi, anonymous)
+
+    def _create(self, title, options, ends_at, multi, anonymous):
         title = (title or "").strip()
         options = [o.strip() for o in options if o and o.strip()]
         if not title or len(title) > TITLE_LIMIT:

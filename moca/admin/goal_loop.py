@@ -587,10 +587,10 @@ def main():
     sync_votes(votes_ui, log)
     sources.sync(log)
     evidence.review(openai_client(), log, dry_run=args.dry_run)
-    planner.run(openai_client(), log, dry_run=args.dry_run)
     handled = GoalLoop(openai_client(), events_ui, log, dry_run=args.dry_run, votes_ui=votes_ui,
                        board_ui=SomoimBoard(chat)).run()
     log(f"다룬 목표: {handled or '없음'}")
+    planner.run(openai_client(), log, dry_run=args.dry_run)  # 이번에 만든 프로그램도 같은 회차에 기획
     chat.park()
 
 

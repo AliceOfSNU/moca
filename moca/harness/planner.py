@@ -1,9 +1,9 @@
 """The program planner: fills a program's plan — a recurring program's ActivityTemplate, a linear program's
 ProgramSketch (documents/program_activitiy.md).
 
-A program is created with its plan null. At the start of each 운영 round, after the evidence review, the harness
-picks one program whose plan is missing (or that the developer asked to rewrite, with a note, from the dashboard)
-and runs one planner call for it. The planner is 모카 in a planning role, with nothing but that program in view:
+A program is created with its plan null. At the end of each 운영 round, after the goal loop (so a program made in
+that round is planned in that round), the harness picks one program whose plan is missing (or that the developer
+asked to rewrite, with a note, from the dashboard) and runs one planner call for it. The planner is 모카 in a planning role, with nothing but that program in view:
 the program itself, its grounding hypotheses and their evidence, the knowledge 운영 모카 may see, past 정모 and
 votes, and web search — how other groups run similar programs.
 
