@@ -508,7 +508,7 @@ class GoalLoop:
             return "변경", summary + (" → 첫 새 하위 목표부터 진행" if got_children else ""), got_children, {"changes": done}
         if kind == "wait":
             wait = step.get("resume_when") or {}
-            open_ids = {t["id"] for t in tasks.group_chat_tasks()}
+            open_ids = {t["id"] for t in tasks.open_tasks()}  # chat tasks and vote watchers alike
             ids = wait.get("task_ids") or []
             if not ids or not set(ids) <= open_ids:
                 return "거절", f"기다릴 수 있는 작업은 진행 중인 작업뿐입니다: {sorted(open_ids) or '없음'}", False, {}
