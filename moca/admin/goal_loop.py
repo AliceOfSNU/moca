@@ -41,7 +41,7 @@ from chatbot.profiles import MEMBER_TOOL, composition_block
 from chatbot.profiles import search as member_search
 from chatbot.post_tools import create_with_post_tools
 from harness import goals as G
-from harness import evidence, hypotheses, knowledge, programs, sources, tasks
+from harness import evidence, hypotheses, knowledge, planner, programs, sources, tasks
 
 MODEL = "gpt-6-astra"
 MAX_STEPS = 4            # steps per wake-up
@@ -132,8 +132,11 @@ GOAL_RULES = f"""
   참여로 알 수 있어야 한다. 주된 활동이 여럿이면 프로그램을 나눠. 반복은 정해진 횟수(constant), 조건이 맞는
   동안(conditional), 끝없이(infinite) 중 하나.
 - 대상은 참여할 만한 멤버(members)와, 누구를 위한 것인지(criteria)로 적어. 확실하지 않은 멤버는 넣지 마.
-- 프로그램은 아직 계획일 뿐이야. 활동(토론, 각자 스터디, 세미나 같은 구체적인 정모)으로 구체화하는 기능은 아직
-  없어. 프로그램은 너만 보고 멤버에게는 보이지 않으니, 채팅이나 공지에서 프로그램을 말하지 마.
+- 프로그램을 만들 때 기획은 비워 둔다. 정기 프로그램의 템플릿(매 회차의 틀)과 단계형 프로그램의 스케치(단계별
+  커리큘럼)는 하네스의 기획 담당이 조사와 근거를 갖춰 채우고, 입력의 [모카의 프로그램]에 보인다. 너는 기획을
+  직접 고칠 수 없어.
+- 프로그램은 아직 계획일 뿐이야. 기획으로 실제 정모를 여는 기능은 아직 없어. 프로그램은 너만 보고 멤버에게는
+  보이지 않으니, 채팅이나 공지에서 프로그램을 말하지 마.
 - 근거 가설이 나중에 뒷받침됨 아래로 떨어지면 입력의 [모카의 프로그램]에 ⚠로 표시된다. 하네스는 프로그램을
   바꾸지 않으니, 그 프로그램을 계속할지 네가 판단해. 비슷한 프로그램이 이미 있으면 새로 만들지 마.
 
@@ -584,6 +587,7 @@ def main():
     sync_votes(votes_ui, log)
     sources.sync(log)
     evidence.review(openai_client(), log, dry_run=args.dry_run)
+    planner.run(openai_client(), log, dry_run=args.dry_run)
     handled = GoalLoop(openai_client(), events_ui, log, dry_run=args.dry_run, votes_ui=votes_ui,
                        board_ui=SomoimBoard(chat)).run()
     log(f"다룬 목표: {handled or '없음'}")

@@ -2,9 +2,9 @@
 
 Deliberately separate from the moca code: it imports nothing from it. Its only contract is the files moca keeps
 under data/ — goals, steps, tasks, knowledge, hypotheses, programs, consent and the loop's runtime status. It reads
-them, and writes exactly three things, each checked with the same rules as the harness: a new top-level goal into
-data/goals/goals.json, a new hypothesis into data/hypotheses/hypotheses.json (for seeding 모카's first ones), and a
-new program into data/programs/programs.json.
+them, and writes exactly four things, each checked with the same rules as the harness: a new top-level goal into
+data/goals/goals.json, a new hypothesis into data/hypotheses/hypotheses.json (for seeding 모카's first ones), a
+new program into data/programs/programs.json, and a request (with a note) that the planner rewrite a program's plan.
 
 Member names are shown the way 운영 모카 sees them: filled in only for members who allowed 모임 운영 use,
 '한 멤버' for everyone else (data/members/scope_consent.json).
@@ -58,6 +58,7 @@ PROG_LIMITS = {"title": 40, "purpose": 300, "why": 200, "reasoning": 400, "crite
                "exit_state": 200, "measure": 250, "format": 200, "condition": 200}
 PROG_RANGES = {"duration_days": (1, 180), "interval_days": (1, 90), "count": (1, 100), "size": (1, 50)}
 PROG_MAX_LIVE = 10
+PLAN_NOTE_LIMIT = 500
 
 DATA = DEFAULT_DATA
 _write_lock = threading.Lock()
@@ -266,6 +267,7 @@ def _programs(names):
     """Programs with their text filled in as 운영 모카 sees it, their grounding hypotheses' current state, and a flag
     for each hypothesis that has since fallen below supported (the harness only flags; it never changes a program)."""
     hypos = {h["id"]: h for h in _json(DATA / "hypotheses" / "hypotheses.json", [])}
+    knowledge = {r["id"]: _statement(r, names) for r in _visible_knowledge(names)}
     out = []
     for p in _json(DATA / "programs" / "programs.json", []):
         subjects = p.get("subjects", [])
@@ -288,7 +290,10 @@ def _programs(names):
             shown.update({k: fill(p["linear"][k]) for k in ("entry_state", "exit_state", "measure")})
         if p.get("recurring"):
             shown.update(format=fill(p["recurring"]["format"]), condition=fill(p["recurring"]["repeats"].get("condition")))
-        out.append(dict(p, shown=shown, grounds_shown=grounds, flags=flags,
+        plan = (p.get("recurring") or {}).get("activity_template") or (p.get("linear") or {}).get("sketch")
+        plan_grounds = [dict(x, statement=knowledge.get(x["id"], "(지금은 보이지 않는 지식)"))
+                        for x in (plan or {}).get("grounds", {}).get("knowledge", [])]
+        out.append(dict(p, shown=shown, grounds_shown=grounds, flags=flags, plan=plan, plan_grounds_shown=plan_grounds,
                         type_label=PROG_TYPES.get(p["type"], p["type"]),
                         status_label=PROG_STATUSES.get(p["status"], p["status"])))
     return sorted(out, key=lambda p: p["created_at"], reverse=True)
@@ -622,6 +627,28 @@ def add_program(body):
     return record, None
 
 
+def request_plan(body):
+    """Ask the planner (moca: harness/planner.py) to write a program's plan again, with a note. The planner picks
+    it up at the next 운영 round. Returns (record, None) or (None, problem)."""
+    pid = (body.get("id") or "").strip()
+    note = (body.get("note") or "").strip()
+    if len(note) > PLAN_NOTE_LIMIT:
+        return None, f"메모는 {PLAN_NOTE_LIMIT}자 이내여야 합니다"
+    path = DATA / "programs" / "programs.json"
+    with _write_lock:
+        records = _json(path, [])
+        p = next((x for x in records if x["id"] == pid), None)
+        if not p:
+            return None, f"없는 프로그램입니다: {pid}"
+        if p["status"] not in PROG_LIVE:
+            return None, "끝났거나 그만둔 프로그램입니다"
+        p["plan_request"] = {"note": note, "at": time.strftime(FMT), "by": SEEDED_BY}
+        tmp = path.with_suffix(".dashboard.tmp")
+        tmp.write_text(json.dumps(records, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, path)
+    return p, None
+
+
 # --- http ----------------------------------------------------------------------------------------
 
 class Handler(BaseHTTPRequestHandler):
@@ -654,7 +681,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path not in ("/api/goals", "/api/hypotheses", "/api/programs"):
+        if path not in ("/api/goals", "/api/hypotheses", "/api/programs", "/api/programs/plan"):
             return self._send(404, {"error": "not found"})
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
@@ -665,6 +692,11 @@ class Handler(BaseHTTPRequestHandler):
             if problem:
                 return self._send(400, {"error": problem})
             return self._send(201, {"hypothesis": record})
+        if path == "/api/programs/plan":
+            record, problem = request_plan(body)
+            if problem:
+                return self._send(400, {"error": problem})
+            return self._send(200, {"program": record})
         if path == "/api/programs":
             record, problem = add_program(body)
             if problem:

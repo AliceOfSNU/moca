@@ -12,8 +12,9 @@ A program must say why it has to exist: every program rests on at least one hypo
 confirmed when the program is created. If a grounding hypothesis later drops below that, nothing is changed
 automatically — the program is flagged, for 운영 모카 and on the dashboard, and whoever runs it decides.
 
-Activities (the concrete 정모 — discussion, individual study, seminar) are the next stage; until then `sketch` and
-`activity_template` stay null and a program is a plan (`planned`). Programs are internal: members don't see them,
+A program is created with its plan null — `recurring.activity_template` or `linear.sketch`. The planner
+(harness/planner.py) fills it at a later 운영 round; 운영 모카 only sees it. Activities (the concrete 정모 built from
+the plan) are the next stage; until then a program is `planned`. Programs are internal: members don't see them,
 and 모카 doesn't mention them in the chat.
 
 One record per program in data/programs/programs.json:
@@ -39,6 +40,7 @@ Usage (from the moca/ directory):
 """
 import difflib
 import json
+import os
 import re
 import secrets
 import sys
@@ -69,7 +71,9 @@ def load():
 
 def save(records):
     DATA.mkdir(parents=True, exist_ok=True)
-    FILE.write_text(json.dumps(records, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp = FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(records, ensure_ascii=False, indent=1), encoding="utf-8")
+    os.replace(tmp, FILE)  # the dashboard reads (and writes) this file too
 
 
 def live(records=None):
@@ -268,6 +272,17 @@ def line(p, by_id=None):
         h = by_id.get(x["id"])
         state = H.STATUSES[h["status"]] if h else "없어짐"
         out += f"\n  근거 {x['id']} [{state}]: {show(p, x['why'])}"
+    plan = p["recurring"]["activity_template"] if p["type"] == "recurring" else p["linear"]["sketch"]
+    if plan and p["type"] == "recurring":
+        agenda = " → ".join(f"{a['title']} {a['minutes']}분" for a in plan["agenda"])
+        slots = ", ".join(f"{x['name']}({x['fill_by']})" for x in plan["slots"])
+        out += (f"\n  템플릿 v{plan['version']}: {plan['summary']} ({plan['duration_minutes']}분)"
+                f"\n    순서: {agenda}" + (f"\n    정할 것: {slots}" if slots else ""))
+    elif plan:
+        out += f"\n  스케치 v{plan['version']}: {plan['summary']}" + "".join(
+            f"\n    {st['n']}. (day {st['day']}) {st['title']} → {st['exit_state']}" for st in plan["stages"])
+    else:
+        out += "\n  (기획은 아직 — 하네스가 운영 라운드에 채운다)"
     for f in flags(p, by_id):
         out += f"\n  ⚠ {f} — 이 프로그램을 계속할지 다시 볼 것"
     return out
@@ -340,8 +355,8 @@ class Proposals:
             return f"프로그램을 만들지 않았습니다: {problem}"
         if self.log:
             self.log(f"  프로그램 {record['id']}: {show(record, record['title'])}")
-        return (f"프로그램 {record['id']}를 만들었습니다 (상태: 계획됨). 활동으로 구체화하는 기능은 아직 없고, "
-                "멤버에게는 보이지 않습니다.")
+        return (f"프로그램 {record['id']}를 만들었습니다 (상태: 계획됨). 기획(템플릿·스케치)은 하네스가 다음 운영 "
+                "라운드에 채웁니다. 멤버에게는 보이지 않습니다.")
 
 
 def main():

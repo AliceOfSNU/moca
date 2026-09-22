@@ -177,3 +177,7 @@ form label.check { display: flex; gap: 8px; align-items: baseline; font-weight: 
 .pair { display: flex; gap: 8px; }
 .pair > div { flex: 1; min-width: 0; }
 .why { margin: 2px 0 8px 24px; }
+.plan { margin-top: 10px; padding: 8px 10px; border-left: 3px solid var(--blue); background: var(--bg); border-radius: 0 8px 8px 0; }
+.plan ol.cites li { margin-bottom: 4px; }
+.rewrite { display: flex; gap: 8px; margin-top: 8px; align-items: flex-start; }
+.rewrite textarea { flex: 1; }

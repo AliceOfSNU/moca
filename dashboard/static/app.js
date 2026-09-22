@@ -4,7 +4,7 @@
 
 let S = null;                 // latest state from the server
 let connected = false;
-const ui = { selectedNode: {}, openItems: new Set(), knowledgeDesc: true, formDraft: null, formMsg: null };
+const ui = { selectedNode: {}, openItems: new Set(), knowledgeDesc: true, formDraft: null, formMsg: null, planNotes: {}, planMsg: null };
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -418,6 +418,80 @@ function progBody(d) {
   return body;
 }
 
+const activityLabel = { individual_study: "각자 스터디", presentation: "발표", hands_on: "실습", discussion: "토론",
+  show_and_tell: "결과물 공유", clinic: "질문·상담", collab_project: "함께 만들기", social: "친목", other: "기타" };
+const modeLabel = { offline: "오프라인", online: "온라인", either: "온·오프라인" };
+const fillLabel = { volunteer: "희망자 모집", vote: "투표", moca: "모카가 정함", fixed: "고정" };
+const whoLabel = { member_volunteer: "맡은 멤버", all_participants: "참가자 모두", moca: "모카" };
+const phaseLabel = { before: "전", during: "중", after: "후" };
+const typeOf = (x) => x.activity_type === "other" ? (x.type_label || "기타") : activityLabel[x.activity_type] || x.activity_type;
+
+function slotsHtml(slots) {
+  return slots.length ? `<ul class="cites">${slots.map((s) => `<li><b>${esc(s.name)}</b> (${esc(s.count)}) · ${esc(fillLabel[s.fill_by] || s.fill_by)} — ${esc(s.how)}
+    ${s.fallback ? `<div class="muted">안 채워지면: ${esc(s.fallback)}</div>` : ""}</li>`).join("")}</ul>` : "";
+}
+
+function planGroundsHtml(p) {
+  const g = p.plan.grounds;
+  const k = p.plan_grounds_shown.map((x) => `<li>${esc(x.statement)} <span class="muted mono">${esc(x.id)}</span><div class="muted">→ ${esc(x.supports)}</div></li>`);
+  const s = g.sources.map((x) => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title || x.url)}</a> — ${esc(x.finding)}<div class="muted">→ ${esc(x.supports)}</div></li>`);
+  const q = (p.plan.research || {}).queries || [];
+  return `<div class="hypo-line"><b>기획 근거</b> ${esc(g.reasoning)}</div>
+    ${k.length || s.length ? `<ul class="cites">${k.join("")}${s.join("")}</ul>` : ""}
+    ${q.length ? `<div class="hypo-line muted" style="font-size:12px"><b>검색어</b> ${q.map(esc).join(" · ")}</div>` : ""}`;
+}
+
+function planHtml(p) {
+  const t = p.plan;
+  if (!t) {
+    const fail = p.plan_failure ? `<div class="flag">기획 실패 (${esc(p.plan_failure.at)}): ${esc(p.plan_failure.problems.join("; "))}</div>` : "";
+    return `<div class="plan"><div class="hypo-line"><b>${p.type === "recurring" ? "템플릿" : "스케치"}</b>
+      <span class="muted">아직 없음 — 다음 운영 라운드에 기획 담당이 채웁니다</span></div>${fail}</div>`;
+  }
+  let body;
+  if (p.type === "recurring") {
+    body = `<div class="hypo-line"><b>템플릿 v${t.version}</b> ${esc(typeOf(t))} · ${esc(modeLabel[t.mode] || t.mode)} · ${t.duration_minutes}분 — ${esc(t.summary)}</div>
+      <div class="hypo-line"><b>한 회차</b> ${esc(t.entry_state)} → ${esc(t.exit_state)} <span class="muted">(확인: ${esc(t.check)})</span></div>
+      <ol class="cites">${t.agenda.map((a) => `<li><b>${esc(a.title)}</b> ${a.minutes}분 — ${esc(a.what)}</li>`).join("")}</ol>
+      ${t.slots.length ? `<div class="hypo-line"><b>정할 것</b></div>${slotsHtml(t.slots)}` : ""}
+      <div class="hypo-line"><b>역할</b></div><ul class="cites">${t.roles.map((r) => `<li>${esc(r.role)} · ${esc(whoLabel[r.who] || r.who)} · 정모 ${esc(phaseLabel[r.phase] || r.phase)} — ${esc(r.what)}</li>`).join("")}</ul>
+      ${t.preparation.length ? `<div class="hypo-line"><b>준비</b></div><ul class="cites">${t.preparation.map((x) => `<li>${esc(x.when)} · ${esc(x.who)} — ${esc(x.what)}</li>`).join("")}</ul>` : ""}
+      <div class="hypo-line"><b>장소</b> ${esc(t.logistics.place_rule)} · <b>시간</b> ${esc(t.logistics.time_rule)} · <b>비용</b> ${esc(t.logistics.cost)}</div>
+      ${t.variations.length ? `<div class="hypo-line"><b>예외</b></div><ul class="cites">${t.variations.map((v) => `<li>${esc(v)}</li>`).join("")}</ul>` : ""}`;
+  } else {
+    body = `<div class="hypo-line"><b>스케치 v${t.version}</b> ${esc(t.summary)} <span class="muted">(${t.join_until}단계까지 합류 가능)</span></div>
+      <ol class="cites">${t.stages.map((s) => `<li><b>day ${s.day} · ${esc(s.title)}</b> <span class="muted">${esc(typeOf(s))} · ${esc(modeLabel[s.mode] || s.mode)}</span>
+        <div>${esc(s.entry_state)} → <b>${esc(s.exit_state)}</b></div>
+        ${s.needs_from_before ? `<div class="muted">앞 단계에서 필요한 것: ${esc(s.needs_from_before)}</div>` : ""}
+        <div>${esc(s.outline)}</div>
+        ${s.between ? `<div class="muted">다음까지: ${esc(s.between)}</div>` : ""}
+        <div class="muted">확인: ${esc(s.check)} · 못 닿으면: ${esc(s.if_not_reached)}</div>
+        ${slotsHtml(s.slots)}</li>`).join("")}</ol>`;
+  }
+  const hist = (p.plan_history || []).length;
+  const brief = p.type === "recurring"
+    ? `<div class="hypo-line"><b>템플릿 v${t.version}</b> ${esc(typeOf(t))} · ${esc(modeLabel[t.mode] || t.mode)} · ${t.duration_minutes}분 — ${esc(t.summary)}</div>
+       <div class="hypo-line muted">${t.agenda.map((a) => `${esc(a.title)} ${a.minutes}분`).join(" → ")}</div>
+       ${t.slots.length ? `<div class="hypo-line"><b>정할 것</b> ${t.slots.map((s) => `${esc(s.name)} <span class="muted">(${esc(fillLabel[s.fill_by] || s.fill_by)})</span>`).join(", ")}</div>` : ""}`
+    : `<div class="hypo-line"><b>스케치 v${t.version}</b> ${esc(t.summary)}</div>
+       <ol class="cites">${t.stages.map((s) => `<li>day ${s.day} · <b>${esc(s.title)}</b> <span class="muted">${esc(typeOf(s))}</span></li>`).join("")}</ol>`;
+  const key = `plan:${p.id}`;
+  return `<div class="plan">${brief}
+    <details class="item" data-key="${key}" ${ui.openItems.has(key) ? "open" : ""}><summary><span class="label">전체 보기 (근거·검색어 포함)</span></summary>
+      ${body}${planGroundsHtml(p)}</details>
+    <div class="muted" style="font-size:12px">${esc(t.created_at)}${t.note ? ` · 요청 메모: ${esc(t.note)}` : ""}${hist ? ` · 이전 버전 ${hist}개` : ""}</div></div>`;
+}
+
+function rewriteHtml(p) {
+  if (!["planned", "active", "paused"].includes(p.status)) return "";
+  if (p.plan_request) return `<div class="note ok">다시 작성 요청됨 (${esc(p.plan_request.at)})${p.plan_request.note ? `: ${esc(p.plan_request.note)}` : ""} — 다음 운영 라운드에 반영</div>`;
+  if (!p.plan) return "";
+  const id = `f-p-note-${p.id}`;
+  return `<div class="rewrite"><textarea id="${esc(id)}" data-note="${esc(p.id)}" rows="2" maxlength="500"
+      placeholder="다시 작성할 때 기획 담당에게 줄 메모 (예: 2시간은 길다, 온라인도 되게)">${esc(ui.planNotes[p.id] || "")}</textarea>
+    <button type="button" data-rewrite="${esc(p.id)}">다시 작성 요청</button></div>`;
+}
+
 function programCard(p) {
   const key = `prog:${p.id}`, sh = p.shown, size = p.users.size;
   const who = [sh.criteria, sh.members.length ? sh.members.join(", ") : "",
@@ -445,6 +519,9 @@ function programCard(p) {
     ${shape}
     <div class="hypo-line"><b>존재 근거</b> ${esc(sh.reasoning)}</div>
     <ul class="cites">${grounds}</ul>
+    ${planHtml(p)}
+    ${rewriteHtml(p)}
+    ${ui.planMsg && ui.planMsg.id === p.id ? `<div class="note ${ui.planMsg.ok ? "ok" : "err"}">${esc(ui.planMsg.text)}</div>` : ""}
     <details class="item" data-key="${key}" ${ui.openItems.has(key) ? "open" : ""}><summary><span class="label">원본 JSON</span></summary>
       <pre class="json">${jsonHtml(p)}</pre></details>
   </div>`;
@@ -506,7 +583,20 @@ function renderPrograms() {
       ${S.programs.map(programCard).join("") || `<p class="empty">아직 프로그램이 없습니다.</p>`}</div>
   </div>`;
   bindProgForm();
+  bindRewrite();
   bindDetails();
+}
+
+function bindRewrite() {
+  document.querySelectorAll("[data-note]").forEach((el) => (el.oninput = () => { ui.planNotes[el.dataset.note] = el.value; }));
+  document.querySelectorAll("[data-rewrite]").forEach((el) => (el.onclick = async () => {
+    const id = el.dataset.rewrite;
+    const res = await fetch("/api/programs/plan", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, note: ui.planNotes[id] || "" }) });
+    const out = await res.json();
+    if (res.ok) { delete ui.planNotes[id]; ui.planMsg = null; } else ui.planMsg = { id, ok: false, text: out.error };
+    render();
+  }));
 }
 
 function bindProgForm() {
