@@ -359,7 +359,8 @@ class GoalLoop:
             if answered else
             "하위 목표가 모두 끝남 — 이제 이 목표 자신의 기준을 확인할 차례" if after_children else
             "첫 실행" if first else "매일 점검" if daily else "다시 판단할 차례")
-        self.log(f"운영 모카 ▶ 목표 {goal['id']} ({goal['objective']}) — {reason}")
+        who = f"프로그램 모카({goal['program_id']})" if goal.get("program_id") else "운영 모카"
+        self.log(f"{who} ▶ 목표 {goal['id']} ({goal['objective']}) — {reason}")
         this_wake, rejections, modifies = [], 0, 0
         from harness.presence import activity
         for step_no in range(MAX_STEPS + MAX_REJECTIONS + MAX_MODIFY):
