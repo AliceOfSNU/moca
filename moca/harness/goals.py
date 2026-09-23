@@ -64,21 +64,25 @@ def update(goal_id, **fields):
     return goal
 
 
-def _record(goal_id, objective, completion_criteria, parent_id, created_by):
+def _record(goal_id, objective, completion_criteria, parent_id, created_by, program_id=None, activity_id=None):
     return {"id": goal_id, "parent_id": parent_id, "objective": objective,
             "completion_criteria": list(completion_criteria), "status": "active", "outcome": None,
             "created_at": tasks.now(), "created_by": created_by, "wait": None, "last_step_at": None,
-            "cooldown_until": None}
+            "cooldown_until": None,
+            # a program agent's tree carries its program; a goal about one session also names that activity
+            "program_id": program_id, "activity_id": activity_id}
 
 
-def add(goal_id, objective, completion_criteria, parent_id=None, created_by="모임장"):
+def add(goal_id, objective, completion_criteria, parent_id=None, created_by="모임장", program_id=None,
+        activity_id=None):
     goals = load()
     if get(goals, goal_id):
         raise ValueError(f"{goal_id} 목표가 이미 있습니다")
     if parent_id and not get(goals, parent_id):
         raise ValueError(f"상위 목표 {parent_id}가 없습니다")
-    goals.append(_record(goal_id, objective, completion_criteria, parent_id, created_by))
+    goals.append(_record(goal_id, objective, completion_criteria, parent_id, created_by, program_id, activity_id))
     save(goals)
+    return get(load(), goal_id)
 
 
 def children(goals, goal):
@@ -160,10 +164,19 @@ def modify(focus_id, changes, dry_run=False):
                 return None, f"objective는 1~{OBJECTIVE_LIMIT}자여야 합니다"
             if not 1 <= len(criteria) <= MAX_CRITERIA:
                 return None, f"completion_criteria는 1~{MAX_CRITERIA}개여야 합니다"
-            new = _record(_new_id(work, parent["id"]), objective, criteria, parent["id"], "운영 모카")
+            activity_id = (c.get("activity_id") or "").strip() or None
+            if activity_id:
+                from harness import activities as A
+                a = A.get(activity_id)
+                if a is None or a["program_id"] != root.get("program_id"):
+                    return None, f"{activity_id}는 이 프로그램의 활동이 아닙니다"
+            new = _record(_new_id(work, parent["id"]), objective, criteria, parent["id"],
+                          "프로그램 모카" if root.get("program_id") else "운영 모카",
+                          program_id=root.get("program_id"), activity_id=activity_id)
             work.append(new)
             tree.add(new["id"])
-            done.append({"op": "add", "goal_id": new["id"], "parent_id": parent["id"], "objective": objective})
+            done.append({"op": "add", "goal_id": new["id"], "parent_id": parent["id"], "objective": objective,
+                         "activity_id": activity_id})
         elif op == "remove":
             target = get(work, c.get("goal_id"))
             if target is None or target["id"] not in tree:

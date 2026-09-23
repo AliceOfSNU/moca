@@ -25,7 +25,7 @@ from chatbot.members import KINDS, members_with_notes
 from chatbot.post_tools import POST_SEARCH_RULES, create_with_post_tools
 from chatbot.store import ChatStore
 from cua.agent import openai_client
-from harness import knowledge, programs
+from harness import activities, knowledge
 from harness.tasks import (DEADLINE_HOURS, DEFAULT_HOURS, MAX_GROUP_CHAT_PER_DAY, consume, create_group_chat_task,
                            finished_group_chat_tasks, group_chat_tasks)
 from cua.android import AndroidDevice
@@ -127,7 +127,7 @@ class EventTools:
 
     # writing -------------------------------------------------------------------
     def create_event(self, name=None, when=None, location=None, capacity=20, expense=0, post_title=None,
-                     purpose=None, mode=None, topic=None, format=None, format_note=None, program_id=None, stage=None):
+                     purpose=None, mode=None, topic=None, format=None, format_note=None, activity_id=None):
         try:
             at = dt.datetime.strptime(when, "%Y-%m-%d %H:%M")
         except (TypeError, ValueError):
@@ -135,8 +135,8 @@ class EventTools:
         capacity, expense = int(capacity), int(expense)
         plan = {"purpose": purpose, "mode": mode, "topic": topic, "format": format, "format_note": format_note}
         problem = check_create(name, at, location, capacity, expense) or check_plan(plan, location)
-        if not problem:  # every 정모 is an activity of a running program with a plan (harness/programs.py)
-            _, problem = programs.check_activity(program_id, stage, mode)
+        if not problem:  # every 정모 is one activity of a program, with its open questions settled
+            _, problem = activities.check_schedulable(activity_id, mode, when)
         if not problem and not (post_title or "").strip():
             problem = "정모에는 연동할 게시글이 있어야 합니다. write_post로 안내 글을 먼저 쓰고 그 제목을 post_title로 주세요"
         if not problem and find_post(post_title) is None:
@@ -151,12 +151,11 @@ class EventTools:
         if result.startswith("create_event 완료"):
             remember_created(name, at, location, capacity, expense)  # 바로 수정·취소할 수 있게 목록에 넣는다
             goal = self.agent[5:] if self.agent.startswith("goal:") else None
+            act = activities.schedule(activity_id, name, when, location)
             set_plan(name, {**{k: (v or "").strip() or None for k, v in plan.items()}, "post_title": post_title,
-                            "program_id": program_id, "stage": stage,
+                            "activity_id": activity_id, "program_id": act["program_id"],
                             "goal_id": goal, "created_by": self.agent, "created_at": time.strftime("%Y-%m-%d %H:%M:%S")})
-            act = programs.add_activity(program_id, name, when, stage, post_title, goal, self.agent)
-            which = f"{act['session']}회차" if "session" in act else f"{act['stage']}단계"
-            result += f" — 프로그램 {program_id}의 {which} 활동으로 기록했습니다"
+            result += f" — 프로그램 {act['program_id']}의 {activities.which(act)} 활동으로 잡았습니다"
         return result
 
     def edit_event(self, name=None, new_name=None, location=None, capacity=None, expense=None,
@@ -191,7 +190,7 @@ class EventTools:
             log_action(self.agent, "edit_plan", {"name": name, **plan_edit}, "ok")
         if new_name:
             rename_plan(name, new_name)
-            programs.rename_activity(name, new_name)
+            activities.rename_event(name, new_name)
         return result
 
     def cancel_event(self, name=None, reason=None):
@@ -201,7 +200,7 @@ class EventTools:
         result = self._run("cancel_event", {"name": name, "reason": reason}, lambda: self.ui.delete(name))
         if result.startswith("cancel_event 완료"):
             drop_plan(name)
-            programs.cancel_activity(name, reason)
+            activities.cancel(event=name, reason=reason)
         return result
 
     def set_attendance(self, name=None, attending=True):
@@ -218,8 +217,8 @@ class EventTools:
             {"type": "function", "name": "read_event", "description": "정모 하나의 자세한 정보를 본다.",
              "parameters": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}},
             {"type": "function", "name": "create_event",
-             "description": "정모를 새로 만든다. 모든 정모는 프로그램의 활동이라, 기획(템플릿·스케치)이 채워진 "
-                            "프로그램의 program_id가 필요하다. 모카가 자동으로 참석자가 된다. "
+             "description": "정모를 새로 만든다. 모든 정모는 프로그램의 활동 하나이므로, 정할 것을 모두 정한 "
+                            "기획 중인 활동의 activity_id가 필요하다. 모카가 자동으로 참석자가 된다. "
                             "앱의 정모에는 이름·일시·장소·비용·정원밖에 없어서, 왜 열고 어떻게 진행하는지는 "
                             "계획(purpose·mode·topic·format)으로 함께 남긴다. 계획은 아직 멤버에게 보이지 않는다.",
              "parameters": {"type": "object", "properties": {
@@ -231,11 +230,10 @@ class EventTools:
                  "post_title": {"type": "string",
                                 "description": "이 정모를 설명하는, 모카가 write_post로 먼저 쓴 게시글의 제목. "
                                                "그 글이 정모 게시글로 연동된다. 정모마다 하나씩 반드시 있어야 한다"},
-                 "program_id": {"type": "string", "description": "이 정모가 활동으로 속하는 프로그램 id (p_…)"},
-                 "stage": {"type": "integer", "description": "단계형 프로그램일 때만: 스케치의 몇 단계인지"},
+                 "activity_id": {"type": "string", "description": "이 정모로 여는 활동의 id (a_…)"},
                  **PLAN_FIELDS},
                  "required": ["name", "when", "location", "post_title", "purpose", "mode", "topic", "format",
-                              "program_id"]}},
+                              "activity_id"]}},
             {"type": "function", "name": "edit_event",
              "description": "모카가 만든 정모의 이름·장소·정원·비용이나 계획을 바꾼다. 날짜와 시간은 앱에서 바꿀 수 없다. "
                             "계획만 바꾸면 앱은 건드리지 않는다.",

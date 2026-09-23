@@ -473,8 +473,11 @@ def run(client, log=None, dry_run=False, program_id=None):
         if log:
             log(f"  {kind} v{plan['version']} 저장: {plan['summary'][:100]}")
     P.save(records)
-    if not problems and p.get("goal_id"):
-        _wake(p["goal_id"], log)
+    if not problems:
+        from admin.program_agent import spawn  # the plan is there: the program gets its own agent at once
+        spawn(p, log)
+        if p.get("goal_id"):
+            _wake(p["goal_id"], log)
     return p["id"]
 
 

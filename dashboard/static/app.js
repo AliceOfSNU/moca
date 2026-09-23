@@ -37,7 +37,8 @@ function displayStatus(g) {
 const statusLabel = { active: "진행 중", waiting: "대기", achieved: "달성", closed: "닫힘", cooldown: "쉬는 중",
   queued: "대기열", running: "진행 중", succeeded: "성공", failed: "실패", unknown: "?",
   open: "검증 전", supported: "뒷받침됨", confirmed: "충분히 뒷받침됨", weakened: "약해짐", refuted: "폐기",
-  planned: "계획됨", paused: "멈춤", finished: "끝남", dropped: "그만둠", missing: "없어짐" };
+  planned: "계획됨", paused: "멈춤", finished: "끝남", dropped: "그만둠", missing: "없어짐",
+  draft: "기획 중", scheduled: "정모 잡힘", held: "지난 활동", canceled: "취소됨" };
 const chip = (s) => `<span class="chip s-${esc(s)}">${esc(statusLabel[s] || s)}</span>`;
 
 // the goal the harness would pick next in a tree (same rule as moca's harness/goals.py: focus)
@@ -482,12 +483,25 @@ function planHtml(p) {
     <div class="muted" style="font-size:12px">${esc(t.created_at)}${t.note ? ` · 요청 메모: ${esc(t.note)}` : ""}${hist ? ` · 이전 버전 ${hist}개` : ""}</div></div>`;
 }
 
+const actStatus = { draft: "기획 중", scheduled: "정모 잡힘", held: "지난 활동", canceled: "취소됨" };
+
 function activitiesHtml(p) {
   const acts = p.activities || [];
-  if (!acts.length) return `<div class="hypo-line muted" style="font-size:12px"><b>활동</b> 아직 연 정모 없음</div>`;
-  return `<div class="hypo-line"><b>활동 (정모 ${acts.filter((a) => a.status !== "canceled").length})</b></div>
-    <ul class="cites">${acts.map((a) => `<li class="${a.status === "canceled" ? "dim" : ""}">${a.session ? `${a.session}회차` : `${a.stage}단계`} ·
-      <b>${esc(a.event)}</b> ${esc(a.when)}${a.status === "canceled" ? ` <span class="muted">(취소: ${esc(a.canceled_reason || "")})</span>` : ""}</li>`).join("")}</ul>`;
+  const agent = p.agent ? `<span class="muted">담당 모카: 목표 ${esc(p.agent.goal_id)}</span>` : `<span class="muted">담당 모카 없음 (기획이 채워지면 붙습니다)</span>`;
+  if (!acts.length) return `<div class="hypo-line"><b>활동</b> ${agent} — 아직 기획한 회차 없음</div>`;
+  return `<div class="hypo-line"><b>활동 (${acts.length})</b> ${agent}</div>
+    <ul class="cites">${acts.map((a) => {
+      const left = (a.slots || []).filter((s) => !s.value);
+      const done = (a.slots || []).filter((s) => s.value);
+      return `<li class="${a.status === "canceled" ? "dim" : ""}">
+        ${chip(a.status)} <b>${esc(a.session ? a.session + "회차" : a.stage + "단계")} · ${esc(a.title)}</b>
+        <span class="muted mono">${esc(a.id)}</span>
+        <div class="muted">${esc(a.when || "시각 미정")} · ${esc(a.location || "장소 미정")}${a.event ? ` · 정모 '${esc(a.event)}'` : ""}</div>
+        ${done.length ? `<div>정함: ${done.map((s) => `${esc(s.name)} — ${esc(s.value)}`).join(" · ")}</div>` : ""}
+        ${left.length ? `<div class="muted">아직 정할 것: ${left.map((s) => `${esc(s.name)} (${esc(fillLabel[s.fill_by] || s.fill_by)})`).join(", ")}</div>` : ""}
+        ${(a.goals || []).length ? `<div class="muted">목표: ${a.goals.map((g) => `${esc(g.objective)} [${esc(statusLabel[g.status] || g.status)}]`).join(" · ")}</div>` : ""}
+      </li>`;
+    }).join("")}</ul>`;
 }
 
 function rewriteHtml(p) {

@@ -22,7 +22,8 @@ from admin.events import sync_events
 from admin.votes import finish_vote_tasks, sync_votes
 from admin.goal_loop import GoalLoop
 from chatbot.config import DEVELOPER
-from harness import devmail, evidence, planner, post_facts, sources, stardust, tasks
+from admin.program_agent import spawn_due as _spawn_due
+from harness import activities, devmail, evidence, planner, post_facts, sources, stardust, tasks
 from harness.goals import focus as goals_due
 from chatbot.agent import ACCOUNT_NAME, ChatAgent, answerable, format_line, is_call, secret
 from chatbot.dm import (DMAgent, ask_memory_scope, converse, greet_newcomers, has_consented, load_consent,
@@ -269,6 +270,8 @@ def admin_session(args, chat, client, daily=False):
     if not args.dry_run:
         sources.sync(log)  # 허락된 멤버 메모와 자기소개를 지식으로 (바뀐 것만)
         evidence.review(client, log)  # 새 지식을 가설과 맞춰 보고 상태를 고친다 (운영 모카가 판단하기 전에)
+        activities.sweep(log)  # 시각이 지난 정모는 '지난 활동'으로: 담당 모카가 결과를 확인할 차례
+        _spawn_due(log)  # 기획이 채워진 프로그램에 담당 모카를 붙인다
     handled = GoalLoop(client, events_ui, log, dry_run=args.dry_run, daily_hour=args.admin_hour,
                        votes_ui=votes_ui, board_ui=SomoimBoard(chat)).run(daily=daily)
     if not handled:

@@ -181,3 +181,7 @@ form label.check { display: flex; gap: 8px; align-items: baseline; font-weight: 
 .plan ol.cites li { margin-bottom: 4px; }
 .rewrite { display: flex; gap: 8px; margin-top: 8px; align-items: flex-start; }
 .rewrite textarea { flex: 1; }
+.s-draft { background: var(--gray-bg); color: var(--gray); }
+.s-scheduled { background: var(--blue-bg); color: var(--blue); }
+.s-held { background: var(--green-bg); color: var(--green); }
+.s-canceled { background: var(--red-bg); color: var(--red); }

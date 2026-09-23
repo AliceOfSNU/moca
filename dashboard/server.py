@@ -91,7 +91,8 @@ def _sources():
     return [DATA / "goals" / "goals.json", DATA / "goals" / "steps.jsonl", DATA / "tasks" / "log.jsonl",
             DATA / "knowledge" / "records.jsonl", DATA / "members" / "scope_consent.json",
             DATA / "runtime" / "status.json", DATA / "runtime" / "presence.json",
-            DATA / "hypotheses" / "hypotheses.json", DATA / "programs" / "programs.json"] + sorted((DATA / "tasks").glob("t_*.json"))
+            DATA / "hypotheses" / "hypotheses.json", DATA / "programs" / "programs.json",
+            DATA / "activities" / "activities.json"] + sorted((DATA / "tasks").glob("t_*.json"))
 
 
 def fingerprint():
@@ -268,6 +269,8 @@ def _programs(names):
     for each hypothesis that has since fallen below supported (the harness only flags; it never changes a program)."""
     hypos = {h["id"]: h for h in _json(DATA / "hypotheses" / "hypotheses.json", [])}
     knowledge = {r["id"]: _statement(r, names) for r in _visible_knowledge(names)}
+    acts = _json(DATA / "activities" / "activities.json", [])
+    goals = _json(DATA / "goals" / "goals.json", [])
     out = []
     for p in _json(DATA / "programs" / "programs.json", []):
         subjects = p.get("subjects", [])
@@ -293,7 +296,15 @@ def _programs(names):
         plan = (p.get("recurring") or {}).get("activity_template") or (p.get("linear") or {}).get("sketch")
         plan_grounds = [dict(x, statement=knowledge.get(x["id"], "(지금은 보이지 않는 지식)"))
                         for x in (plan or {}).get("grounds", {}).get("knowledge", [])]
+        mine = [a for a in acts if a["program_id"] == p["id"]]
+        for a in mine:  # the goals its agent is working on for this session
+            a["goals"] = [{"id": g["id"], "objective": g["objective"], "status": g["status"]}
+                          for g in goals if g.get("activity_id") == a["id"]]
         out.append(dict(p, shown=shown, grounds_shown=grounds, flags=flags, plan=plan, plan_grounds_shown=plan_grounds,
+                        activities=mine,
+                        agent_goals=[{"id": g["id"], "objective": g["objective"], "status": g["status"],
+                                      "parent_id": g["parent_id"], "activity_id": g.get("activity_id")}
+                                     for g in goals if g.get("program_id") == p["id"]],
                         type_label=PROG_TYPES.get(p["type"], p["type"]),
                         status_label=PROG_STATUSES.get(p["status"], p["status"])))
     return sorted(out, key=lambda p: p["created_at"], reverse=True)
@@ -380,7 +391,9 @@ def state():
             "tasks": tasks, "knowledge": knowledge, "knowledge_stats": stats, "flow": _flow(steps, tasks),
             "hypotheses": _hypotheses(names), "hypothesis_options": _hypothesis_options(names),
             "programs": _programs(names), "program_options": _program_options(names),
-            "can_add_goal": not any(g["parent_id"] is None and g["status"] not in FINISHED for g in goals)}
+            # a program agent's own top goal doesn't count: those are the harness's, not the 모임장's
+            "can_add_goal": not any(g["parent_id"] is None and not g.get("program_id") and g["status"] not in FINISHED
+                                    for g in goals)}
 
 
 # --- the one write: a new top-level goal -------------------------------------------------------
@@ -401,7 +414,7 @@ def add_goal(body):
     path = DATA / "goals" / "goals.json"
     with _write_lock:
         goals = _json(path, [])  # re-read right before writing: the loop saves this file too
-        if any(g["parent_id"] is None and g["status"] not in FINISHED for g in goals):
+        if any(g["parent_id"] is None and not g.get("program_id") and g["status"] not in FINISHED for g in goals):
             return None, "이미 진행 중인 최상위 목표가 있습니다. 그 목표가 끝난 뒤에 새로 추가하세요"
         goal_id = goal_id or f"g_{dt.datetime.now():%Y%m%d_%H%M}_{secrets.token_hex(1)}"
         if any(g["id"] == goal_id for g in goals):

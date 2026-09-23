@@ -249,98 +249,33 @@ def plan_of(p):
     return p["recurring"]["activity_template"] if p["type"] == "recurring" else p["linear"]["sketch"]
 
 
-def live_activities(p):
-    return [a for a in p.get("activities", []) if a["status"] != "canceled"]
-
-
-def check_activity(program_id, stage=None, mode=None):
-    """May a 정모 for this program be opened now? Returns (program, None) or (None, why not)."""
-    p = next((x for x in load() if x["id"] == program_id), None) if program_id else None
-    if not program_id:
-        return None, ("모든 정모는 프로그램의 활동이어야 합니다. program_id를 주세요. 맞는 프로그램이 없으면 "
-                      "propose_program으로 먼저 만드세요 (한 번뿐인 친목 모임도 반복 1회짜리 정기 프로그램으로)")
-    if p is None:
-        return None, f"없는 프로그램입니다: {program_id}"
-    if p["status"] not in OPEN_FOR_ACTIVITIES:
-        return None, f"프로그램 {program_id}는 지금 '{STATUSES[p['status']]}' 상태라 정모를 열 수 없습니다"
-    plan = plan_of(p)
-    if plan is None:
-        return None, (f"프로그램 {program_id}의 기획({'템플릿' if p['type'] == 'recurring' else '스케치'})이 아직 "
-                      "없습니다. 하네스가 운영 회차 끝에 채우고, 채워지면 이 목표를 깨웁니다. 그 뒤에 정모를 여세요")
-    acts = live_activities(p)
-    if p["type"] == "recurring":
-        if stage is not None:
-            return None, "정기 프로그램의 정모에는 stage를 쓰지 않습니다 (회차는 하네스가 셉니다)"
-        rep = p["recurring"]["repeats"]
-        if rep["kind"] == "constant" and len(acts) >= rep["count"]:
-            return None, f"프로그램 {program_id}는 {rep['count']}회로 정해져 있고 이미 {len(acts)}회를 열었습니다"
-        allowed = PLAN_MODES[plan["mode"]]
-    else:
-        stages = plan["stages"]
-        if not isinstance(stage, int) or not 1 <= stage <= len(stages):
-            return None, f"단계형 프로그램의 정모에는 stage(1~{len(stages)})가 필요합니다: 스케치의 몇 단계인지"
-        reached = max((a["stage"] for a in acts), default=0)
-        if stage > reached + 1:
-            return None, f"{reached + 1}단계를 건너뛰고 {stage}단계를 열 수 없습니다. 단계는 순서대로 엽니다"
-        now = time.strftime("%Y-%m-%d %H:%M")
-        if any(a["stage"] == stage and a["when"] > now for a in acts):
-            return None, f"{stage}단계 정모가 이미 잡혀 있습니다"
-        allowed = PLAN_MODES[stages[stage - 1]["mode"]]
-    if mode and mode not in allowed:
-        return None, (f"기획은 {plan['mode'] if p['type'] == 'recurring' else stages[stage - 1]['mode']}인데 "
-                      f"정모의 mode가 {mode}입니다. 기획을 따르거나, 기획을 다시 써 달라고 로하에게 부탁하세요")
-    return p, None
-
-
-def add_activity(program_id, event, when, stage=None, post_title=None, goal_id=None, created_by="admin"):
-    """Record a 정모 that was just created as an activity. The first one starts the program."""
+def started(program_id, reason):
+    """A program's first activity makes it active."""
     records = load()
     p = next(x for x in records if x["id"] == program_id)
-    now = time.strftime("%Y-%m-%d %H:%M:%S")
-    act = {"event": event, "when": when, "post_title": post_title, "status": "scheduled", "goal_id": goal_id,
-           "created_by": created_by, "created_at": now}
-    if p["type"] == "recurring":
-        act["session"] = len(live_activities(p)) + 1
-    else:
-        act["stage"] = stage
-    p.setdefault("activities", []).append(act)
     if p["status"] == "planned":
-        p.setdefault("history", []).append({"at": now, "from": "planned", "to": "active",
-                                            "reason": f"첫 활동: '{event}'"})
-        p["status"] = "active"
-        p["started_at"] = now
-    p["updated_at"] = now
-    save(records)
-    return act
+        now = time.strftime("%Y-%m-%d %H:%M:%S")
+        p.setdefault("history", []).append({"at": now, "from": "planned", "to": "active", "reason": reason})
+        p.update(status="active", started_at=now, updated_at=now)
+        save(records)
+    return p
 
 
-def _each_activity(event):
+def finish(program_id, status, reason, by="harness"):
+    """End a program: finished (its goal was reached) or dropped. Its agent is torn down with it."""
+    if status not in ("finished", "dropped"):
+        return None, f"status는 finished나 dropped여야 합니다: {status}"
     records = load()
-    for p in records:
-        for a in p.get("activities", []):
-            if a["event"] == event and a["status"] != "canceled":
-                yield records, p, a
-
-
-def cancel_activity(event, reason=None):
-    for records, p, a in _each_activity(event):
-        a.update(status="canceled", canceled_at=time.strftime("%Y-%m-%d %H:%M:%S"), canceled_reason=reason)
-        p["updated_at"] = a["canceled_at"]
-        save(records)
-        return True
-    return False
-
-
-def rename_activity(old, new):
-    for records, p, a in _each_activity(old):
-        a["event"] = new
-        save(records)
-        return True
-    return False
-
-
-def program_of_event(event):
-    return next(((p, a) for _, p, a in _each_activity(event)), (None, None))
+    p = next((x for x in records if x["id"] == program_id), None)
+    if p is None:
+        return None, f"없는 프로그램입니다: {program_id}"
+    if p["status"] not in LIVE:
+        return None, f"프로그램 {program_id}는 이미 '{STATUSES[p['status']]}' 상태입니다"
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    p.setdefault("history", []).append({"at": now, "from": p["status"], "to": status, "reason": reason, "by": by})
+    p.update(status=status, updated_at=now, finished_at=now)
+    save(records)
+    return p, None
 
 
 def flags(p, by_id=None):
@@ -394,20 +329,12 @@ def line(p, by_id=None):
             f"\n    {st['n']}. (day {st['day']}) {st['title']} → {st['exit_state']}" for st in plan["stages"])
     else:
         out += "\n  (기획은 아직 — 하네스가 운영 라운드에 채운다. 채워지기 전에는 정모를 열 수 없다)"
-    acts = live_activities(p)
+    from harness import activities as A
+    acts = [a for a in A.for_program(p["id"]) if a["status"] != "canceled"]
     for a in acts:
-        which = f"{a['session']}회차" if "session" in a else f"{a['stage']}단계"
-        out += f"\n  활동 {which}: 정모 '{a['event']}' {a['when']}"
-    if plan:
-        if p["type"] == "recurring":
-            rep = p["recurring"]["repeats"]
-            left = f" (남은 횟수 {rep['count'] - len(acts)})" if rep["kind"] == "constant" else ""
-            out += f"\n  다음 정모는 {len(acts) + 1}회차{left}" if rep["kind"] != "constant" or len(acts) < rep["count"] \
-                else "\n  정해진 횟수를 모두 열었다"
-        else:
-            reached = max((a["stage"] for a in acts), default=0)
-            if reached < len(plan["stages"]):
-                out += f"\n  다음 정모는 {reached + 1}단계: {plan['stages'][reached]['title']}"
+        out += f"\n  활동 {A.line(a, full=False)[2:]}"
+    if p.get("agent"):
+        out += f"\n  담당 에이전트: 목표 {p['agent']['goal_id']}"
     for f in flags(p, by_id):
         out += f"\n  ⚠ {f} — 이 프로그램을 계속할지 다시 볼 것"
     return out

@@ -40,6 +40,8 @@ from chatbot.group_task import render_summary
 from chatbot.profiles import MEMBER_TOOL, composition_block
 from chatbot.profiles import search as member_search
 from chatbot.post_tools import create_with_post_tools
+from admin import program_agent
+from harness import activities as A
 from harness import goals as G
 from harness import devmail, evidence, hypotheses, knowledge, planner, programs, sources, tasks
 
@@ -51,6 +53,7 @@ MAX_MODIFY = 2           # modify_goals steps per wake-up (they don't count towa
 NEW_KNOWLEDGE_SHOWN = 15 # new knowledge listed in one input; the rest is one knowledge_search away
 WRITE_TOOLS = ("create_event", "edit_event", "cancel_event", "set_attendance",
                "create_vote", "close_vote", "delete_vote", "ask_developer", "write_post")
+ACTIVITY_TOOLS = ("draft_activity", "update_activity", "cancel_activity")  # 프로그램 모카만
 READ_TOOLS = ("list_events", "read_event", "list_votes", "read_vote")
 
 EXECUTOR_CATALOG = f"""- {{type: agent, name: chat_moca}}  모임 채팅에서 멤버들에게 묻고 답을 모아 결과(요약 + 출처 있는 지식)로 돌려준다.
@@ -58,8 +61,12 @@ EXECUTOR_CATALOG = f"""- {{type: agent, name: chat_moca}}  모임 채팅에서 �
 - {{type: tool, name: list_events}}      정모 목록.               arguments_json: {{}}
 - {{type: tool, name: read_event}}       정모 하나의 상세.         arguments_json: {{"name": …}}
 - {{type: tool, name: write_post}}       게시판에 글 올리기 (정모 안내 글 등). arguments_json: {{"title", "body"}}
-- {{type: tool, name: create_event}}     정모 만들기 (프로그램의 활동으로). arguments_json: {{"name", "when": "YYYY-MM-DD HH:MM", "location", "post_title",
-                                                                   "program_id", "stage"?(단계형만), "capacity"?, "expense"?,
+- {{type: tool, name: draft_activity}}   (프로그램 모카만) 다음 회차·단계를 활동으로 기획한다. arguments_json: {{}}
+- {{type: tool, name: update_activity}}  (프로그램 모카만) 활동에 정해진 것을 적는다. arguments_json: {{"activity_id", "slot"?, "value"?, "note"?,
+                                                                   "when"?, "location"?, "title"?, "notes"?}}
+- {{type: tool, name: cancel_activity}}  (프로그램 모카만) 기획 중인 활동을 접는다. arguments_json: {{"activity_id", "reason"}}
+- {{type: tool, name: create_event}}     정모 만들기 (활동 하나를 실제 정모로). arguments_json: {{"name", "when": "YYYY-MM-DD HH:MM", "location", "post_title",
+                                                                   "activity_id", "capacity"?, "expense"?,
                                                                    "purpose", "mode": "offline"|"online"|"hybrid", "topic",
                                                                    "format": "talk"|"discussion"|"workshop"|"cowork"|"social", "format_note"?}}
 - {{type: tool, name: edit_event}}       모카가 만든 정모의 앱 항목이나 계획 수정. arguments_json: {{"name", "new_name"?, "location"?, "capacity"?, "expense"?,
@@ -136,10 +143,11 @@ GOAL_RULES = f"""
 - 프로그램을 만들 때 기획은 비워 둔다. 정기 프로그램의 템플릿(매 회차의 틀)과 단계형 프로그램의 스케치(단계별
   커리큘럼)는 하네스의 기획 담당이 조사와 근거를 갖춰 운영 회차 끝에 채우고, 입력의 [모카의 프로그램]에 보인다.
   너는 기획을 직접 고칠 수 없어. 기획이 채워지면 하네스가 그 프로그램을 만든 목표를 깨운다.
-- 모든 정모는 프로그램의 활동(activity)이야. 프로그램 없이 여는 정모는 없다. create_event에는 program_id가
-  반드시 필요하고, 단계형이면 몇 단계인지(stage)도 필요해. 하네스는 프로그램이 계획됨·진행 중이 아니거나,
-  기획이 아직 없거나, 정해진 횟수를 다 썼거나, 단계를 건너뛰거나, 기획과 온·오프라인이 다르면 정모를 거절한다.
-  첫 정모를 열면 프로그램은 진행 중이 된다.
+- 기획이 채워지면 하네스가 그 프로그램에 담당 모카(프로그램 에이전트)를 붙인다. 회차를 기획하고, 발표자·진행자·
+  참가자·시간·장소를 당사자에게 확인하고, 정모를 열고, 끝난 뒤 결과를 확인하는 일은 담당 모카가 한다. 너는
+  그 프로그램의 목표 트리를 건드리지 않는다.
+- 모든 정모는 어떤 활동(activity) 하나야. 프로그램 없이 여는 정모는 없다. 네가 직접 정모를 열 일은 거의 없고,
+  열더라도 create_event에는 정할 것을 모두 정한 활동의 activity_id가 필요하다.
 - 한 번뿐인 모임도 예외가 아니다. 친목 번개 같은 일회성 정모는 반복 1회(repeat_kind=constant, repeat_count=1)짜리
   정기 프로그램으로 만든다. 그러니 정모를 열고 싶으면: ① 맞는 프로그램이 이미 있는지 [모카의 프로그램]에서 보고
   ② 없으면 propose_program으로 만들고 ③ 기획이 채워지기를 기다렸다가 ④ 그 기획대로 정모를 연다.
@@ -163,7 +171,8 @@ GOAL_RULES = f"""
 - 목표가 한 번에 하기엔 크면, 필요한 단계를 하위 목표로 나눠. 각 하위 목표에는 objective와 확인할 수 있는
   completion_criteria(1~{G.MAX_CRITERIA}개)를 적어. 하위 목표는 적은 순서대로 하나씩 진행된다.
 - 한 step에 여러 변경을 goal_changes로 한꺼번에 낼 수 있고, 하나라도 규칙에 어긋나면 전부 거절된다.
-  - add: {{"op": "add", "parent_id": 붙일 목표 id, "objective": …, "completion_criteria": […]}}. 새 id는 하네스가 정해 알려 준다.
+  - add: {{"op": "add", "parent_id": 붙일 목표 id, "objective": …, "completion_criteria": […], "activity_id": 이 목표가
+    어느 활동에 대한 것인지(프로그램 모카만, 아니면 null)}}. 새 id는 하네스가 정해 알려 준다.
   - remove: {{"op": "remove", "goal_id": …}}. 아직 아무것도 시작하지 않은 하위 목표만 뺄 수 있다.
     이미 진행된 목표는 지우지 말고 propose_goal_outcome(closed)로 닫아. 최상위 목표는 지울 수 없다.
   - 쓰지 않는 칸(add의 goal_id, remove의 parent_id·objective·completion_criteria)은 null로.
@@ -266,10 +275,11 @@ SCHEMA = {
                                            "limitations": {"type": "array", "items": {"type": "string"}}}},
                 "goal_changes": {"type": ["array", "null"], "items": {
                     "type": "object", "additionalProperties": False,
-                    "required": ["op", "parent_id", "goal_id", "objective", "completion_criteria"],
+                    "required": ["op", "parent_id", "goal_id", "objective", "completion_criteria", "activity_id"],
                     "properties": {"op": {"type": "string", "enum": ["add", "remove"]},
                                    "parent_id": _NULLABLE_STR, "goal_id": _NULLABLE_STR, "objective": _NULLABLE_STR,
-                                   "completion_criteria": {"type": ["array", "null"], "items": {"type": "string"}}}}}}}}}
+                                   "completion_criteria": {"type": ["array", "null"], "items": {"type": "string"}},
+                                   "activity_id": _NULLABLE_STR}}}}}}}
 
 
 def instructions():
@@ -409,12 +419,18 @@ class GoalLoop:
     # --- the step call ------------------------------------------------------------------
 
     def _decide(self, goal, reason, this_wake, since):
+        program = program_agent.program_of(goal)
+        tools = [KNOWLEDGE_TOOL, MEMBER_TOOL]
+        handlers = {"knowledge_search": _knowledge_search,
+                    "member_search": lambda query=None, **_: member_search(query)}
+        if program is None:
+            tools += [hypotheses.TOOL, programs.TOOL]
+            handlers |= {"propose_hypothesis": hypotheses.Proposals(goal["id"], log=self.log, dry_run=self.dry_run),
+                         "propose_program": programs.Proposals(goal["id"], log=self.log, dry_run=self.dry_run)}
         resp = create_with_post_tools(
-            self.client, log=self.log, extra_tools=[KNOWLEDGE_TOOL, MEMBER_TOOL, hypotheses.TOOL, programs.TOOL],
-            handlers={"knowledge_search": _knowledge_search, "member_search": lambda query=None, **_: member_search(query),
-                      "propose_hypothesis": hypotheses.Proposals(goal["id"], log=self.log, dry_run=self.dry_run),
-                      "propose_program": programs.Proposals(goal["id"], log=self.log, dry_run=self.dry_run)},
-            model=MODEL, instructions=instructions(), input=self._input(goal, reason, this_wake, since),
+            self.client, log=self.log, extra_tools=tools, handlers=handlers, model=MODEL,
+            instructions=program_agent.instructions(program) if program else instructions(),
+            input=self._input(goal, reason, this_wake, since),
             text={"format": {"type": "json_schema", "name": "next_step", "strict": True, "schema": SCHEMA}})
         return json.loads(resp.output_text)["next_step"]
 
@@ -440,8 +456,10 @@ class GoalLoop:
             lines.append(f"(이번에 새로 쌓인 지식은 {len(new)}건이고 최근 {len(shown)}건만 보여. 나머지는 knowledge_search로 찾아.)")
         lines += [f"(저장된 지식은 모두 {len(knowledge.load_all())}건. 그 밖의 지식은 knowledge_search로 찾아.)", "",
                   "## 지금 잡혀 있는 정모", EventTools(self.events_ui, self.log).list_events(),
-                  "", "## 진행 중인 투표", open_block(), "", composition_block(), "", hypotheses.block(), "", programs.block(),
-                  "", devmail.block(goal),
+                  "", "## 진행 중인 투표", open_block(), "", composition_block(), ""]
+        program = program_agent.program_of(goal)
+        lines += [program_agent.context(program)] if program else [hypotheses.block(), "", programs.block()]
+        lines += ["", devmail.block(goal),
                   "", "다음 step 하나를 골라."]
         return "\n".join(lines)
 
@@ -528,6 +546,12 @@ class GoalLoop:
         if not self.dry_run:
             G.update(focus_id, status=status, wait=None, finished_at=tasks.now(),
                      outcome={"summary": outcome["summary"], "limitations": outcome.get("limitations", [])})
+            if goal.get("program_id") and goal.get("parent_id") is None:
+                # the agent's own top goal: the program is over, and the agent goes with it
+                program_agent.teardown(goal["program_id"], "finished" if status == "achieved" else "dropped",
+                                       outcome["summary"], self.log)
+                return "수락", (f"목표 {focus_id}를 {status}로 마치고 프로그램 {goal['program_id']}를 "
+                              f"{'끝냈습니다' if status == 'achieved' else '그만뒀습니다'}"), True, {}
         return "수락", f"목표 {focus_id}를 {status}로 마침", True, {}
 
     def _start_task(self, goal, spec):
@@ -544,15 +568,19 @@ class GoalLoop:
             self.log(f"  모임 채팅 작업 생성: {task['id']} — {spec.get('instruction')} (마감 {task['deadline']})")
             return "시작", f"작업 {task['id']}를 채팅 모카에게 맡김 (마감 {task['deadline']})", False, {"task_id": task["id"]}
         name = executor.get("name")
-        if executor.get("type") != "tool" or name not in WRITE_TOOLS + READ_TOOLS:
+        if executor.get("type") != "tool" or name not in WRITE_TOOLS + READ_TOOLS + ACTIVITY_TOOLS:
             return "거절", f"없는 실행자입니다: {executor}", False, {}
+        if name in ACTIVITY_TOOLS and not goal.get("program_id"):
+            return "거절", f"{name}은 프로그램 담당 모카만 쓸 수 있습니다", False, {}
         try:
             arguments = json.loads(spec.get("arguments_json") or "{}")
             assert isinstance(arguments, dict)
         except (ValueError, AssertionError):
             return "거절", "arguments_json은 JSON 객체여야 합니다", False, {}
         agent = f"goal:{goal['id']}"
-        if name == "write_post":
+        if name in ACTIVITY_TOOLS:
+            tools = A.Tools(goal["program_id"], log=self.log, dry_run=self.dry_run)
+        elif name == "write_post":
             if self.board_ui is None:
                 return "거절", "게시글 도구를 쓸 수 없습니다 (앱 연결 없음)", False, {}
             tools = PostTools(self.board_ui, self.log, agent=agent, dry_run=self.dry_run)
@@ -609,6 +637,9 @@ def main():
     sync_votes(votes_ui, log)
     sources.sync(log)
     evidence.review(openai_client(), log, dry_run=args.dry_run)
+    if not args.dry_run:
+        A.sweep(log)
+        program_agent.spawn_due(log)
     handled = GoalLoop(openai_client(), events_ui, log, dry_run=args.dry_run, votes_ui=votes_ui,
                        board_ui=SomoimBoard(chat)).run()
     log(f"다룬 목표: {handled or '없음'}")
