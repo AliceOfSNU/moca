@@ -758,17 +758,22 @@ function bindMock() {
 const SCROLLERS = "pre.json, .checks, .table-wrap, .cites, .scroll";
 
 function scrollKeys() {
-  // the same view rendered again has the same boxes in the same order, so position is a stable key
+  // Position in the page is NOT a stable key: a new step or task is prepended, which shifts every box
+  // after it by one, and the box you were reading gets handed its neighbour's position (usually 0 —
+  // back to the top). So key each box by the id of the item it sits in, and fall back to order only
+  // for the boxes that have no item around them.
   const seen = new Map();
   return [...document.querySelectorAll(SCROLLERS)].map((el) => {
-    const kind = el.className || el.tagName;
-    const n = (seen.get(kind) ?? -1) + 1;
-    seen.set(kind, n);
-    return { el, key: `${kind}#${n}` };
+    const item = el.closest("[data-key]");
+    const scope = `${item ? item.dataset.key : ""}|${el.className || el.tagName}`;
+    const n = (seen.get(scope) ?? -1) + 1;
+    seen.set(scope, n);
+    return { el, key: `${scope}#${n}` };
   });
 }
 
-const atBottom = (el) => el.scrollHeight - el.scrollTop - el.clientHeight < 4;
+const atBottom = (el) =>  // needs real layout: without it every box looks like it is at its end
+  el.clientHeight > 0 && el.scrollHeight > el.clientHeight && el.scrollHeight - el.scrollTop - el.clientHeight < 4;
 
 function takeScroll() {
   const boxes = {};
