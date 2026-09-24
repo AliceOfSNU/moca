@@ -140,7 +140,7 @@ function bindForm() {
   const form = $("#goal-form");
   if (!form) return;
   const d = ui.formDraft;
-  const refreshPreview = () => { const box = form.parentElement.querySelector(".json-box pre"); if (box) box.innerHTML = jsonHtml(previewGoal(d)); };
+  const refreshPreview = () => { const box = form.parentElement.querySelector(".json-box pre"); if (box) setHtml(box, jsonHtml(previewGoal(d))); };
   $("#f-obj").oninput = (e) => { d.objective = e.target.value; refreshPreview(); };
   $("#f-id").oninput = (e) => { d.id = e.target.value; refreshPreview(); };
   form.querySelectorAll("[data-crit]").forEach((el) => (el.oninput = (e) => { d.criteria[+el.dataset.crit] = e.target.value; refreshPreview(); }));
@@ -371,7 +371,7 @@ function bindHypoForm() {
   const form = $("#hypo-form");
   if (!form) return;
   const d = hypoDraft();
-  const refresh = () => { const box = form.parentElement.querySelector(".json-box pre"); if (box) box.innerHTML = jsonHtml(hypoBody(d)); };
+  const refresh = () => { const box = form.parentElement.querySelector(".json-box pre"); if (box) setHtml(box, jsonHtml(hypoBody(d))); };
   const text = { "f-h-claim": "claim", "f-h-members": "members", "f-h-reasoning": "reasoning", "f-h-test": "test" };
   Object.entries(text).forEach(([id, field]) => ($("#" + id).oninput = (e) => { d[field] = e.target.value; refresh(); }));
   $("#f-h-kind").onchange = (e) => { d.kind = e.target.value; refresh(); };
@@ -633,7 +633,7 @@ function bindProgForm() {
   const form = $("#prog-form");
   if (!form) return;
   const d = progDraft();
-  const refresh = () => { const box = form.parentElement.querySelector(".json-box pre"); if (box) box.innerHTML = jsonHtml(progBody(d)); };
+  const refresh = () => { const box = form.parentElement.querySelector(".json-box pre"); if (box) setHtml(box, jsonHtml(progBody(d))); };
   form.querySelectorAll("[data-field]").forEach((el) => (el.oninput = () => { d[el.dataset.field] = el.value; refresh(); }));
   form.querySelectorAll("[data-why]").forEach((el) => (el.oninput = () => { d.hypotheses[el.dataset.why] = el.value; refresh(); }));
   form.querySelectorAll("[data-hypo]").forEach((el) => (el.onchange = () => {
@@ -752,8 +752,52 @@ function bindMock() {
 }
 
 // --- routing + live data -------------------------------------------------------------------------
-function render() {
+// Every state event re-renders the view with innerHTML, which throws away the scroll position of the
+// page and of every box that scrolls (json boxes, tables, checklists). Nothing the reader did caused
+// it, so the page must put them back exactly where they were.
+const SCROLLERS = "pre.json, .checks, .table-wrap, .cites, .scroll";
+
+function scrollKeys() {
+  // the same view rendered again has the same boxes in the same order, so position is a stable key
+  const seen = new Map();
+  return [...document.querySelectorAll(SCROLLERS)].map((el) => {
+    const kind = el.className || el.tagName;
+    const n = (seen.get(kind) ?? -1) + 1;
+    seen.set(kind, n);
+    return { el, key: `${kind}#${n}` };
+  });
+}
+
+const atBottom = (el) => el.scrollHeight - el.scrollTop - el.clientHeight < 4;
+
+function takeScroll() {
+  const boxes = {};
+  for (const { el, key } of scrollKeys()) {
+    if (el.scrollTop || el.scrollLeft) boxes[key] = { top: el.scrollTop, left: el.scrollLeft, end: atBottom(el) };
+  }
+  return { page: window.scrollY, boxes };
+}
+
+function putScroll(saved) {
+  for (const { el, key } of scrollKeys()) {
+    const at = saved.boxes[key];
+    if (!at) continue;
+    // a box that was scrolled to its end was following along (the mock chat), so keep it at the end
+    el.scrollTop = at.end ? el.scrollHeight : at.top;
+    el.scrollLeft = at.left;
+  }
+  if (saved.page) window.scrollTo(0, saved.page);
+}
+
+function setHtml(el, html) {
+  const top = el.scrollTop;  // rewriting a box's contents scrolls it back to the top
+  el.innerHTML = html;
+  el.scrollTop = top;
+}
+
+function render(keepScroll = true) {
   if (!S) return;
+  const scroll = keepScroll ? takeScroll() : null;  // moving to another view starts at the top
   renderHeader();
   const [, route, arg] = (location.hash || "#/").split("/");
   document.querySelectorAll("nav a").forEach((a) => a.classList.toggle("on", a.dataset.route === (route || "goals") || (route === "goal" && a.dataset.route === "goals")));
@@ -772,15 +816,25 @@ function render() {
     const el = keep.id ? $("#" + keep.id) : $(`[data-crit="${keep.crit}"]`);
     if (el && !el.disabled) { el.focus(); try { el.setSelectionRange(keep.pos, keep.pos); } catch (_) {} }
   }
+  if (scroll) putScroll(scroll); else window.scrollTo(0, 0);
 }
+
+let lastRaw = null;
 
 function connect() {
   const es = new EventSource("/api/stream");
-  es.addEventListener("state", (e) => { connected = true; S = JSON.parse(e.data); render(); });
+  es.addEventListener("state", (e) => {
+    const same = connected && e.data === lastRaw;
+    connected = true;
+    lastRaw = e.data;
+    if (same) return;  // the loop touched a file without changing what this page shows
+    S = JSON.parse(e.data);
+    render();
+  });
   es.onerror = () => { connected = false; if (S) renderHeader(); };
 }
 
-window.addEventListener("hashchange", () => { ui.formMsg = null; ui.hypoMsg = null; ui.progMsg = null; render(); });
+window.addEventListener("hashchange", () => { ui.formMsg = null; ui.hypoMsg = null; ui.progMsg = null; render(false); });
 fetch("/api/state").then((r) => r.json()).then((s) => { S = s; render(); });
 // ?snapshot: load once without the live connection (for screenshots and saved pages)
 if (!new URLSearchParams(location.search).has("snapshot")) connect();
