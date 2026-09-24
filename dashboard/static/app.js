@@ -4,7 +4,7 @@
 
 let S = null;                 // latest state from the server
 let connected = false;
-const ui = { selectedNode: {}, openItems: new Set(), knowledgeDesc: true, formDraft: null, formMsg: null, planNotes: {}, planMsg: null, mockWho: null, mockMsg: null };
+const ui = { selectedNode: {}, openItems: new Set(), knowledgeDesc: true, formDraft: null, formMsg: null, planNotes: {}, planMsg: null, mockWho: null, mockMsg: null, mockDraft: {} };
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -658,16 +658,26 @@ function bindProgForm() {
 }
 
 // --- view: the mock 소모임 (only when this data root is a mock run) --------------------------------
-async function mockPost(kind, body) {
+async function mockPost(kind, body, draftId) {
   const res = await fetch(`/api/mock/${kind}`, { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body) });
   const out = await res.json();
   ui.mockMsg = res.ok ? null : { text: out.error };
+  if (res.ok && draftId) delete ui.mockDraft[draftId];  // it was sent; only a refused one is worth keeping
   render();
 }
 
 function memberPicker(id, value) {
-  return `<select id="${id}">${S.mock.members.map((m) => `<option value="${esc(m)}" ${value === m ? "selected" : ""}>${esc(m)}</option>`).join("")}</select>`;
+  const picked = ui.mockDraft[id] ?? value;  // each picker keeps what it was set to across re-renders
+  return `<select id="${id}">${S.mock.members.map((m) => `<option value="${esc(m)}" ${picked === m ? "selected" : ""}>${esc(m)}</option>`).join("")}</select>`;
+}
+
+// a member writing: the box is the main thing here, so it gets a line of its own and room to type in
+function composer(id, placeholder, pickerId, button, rows = 4) {
+  return `<div class="compose">
+    <textarea id="${id}" rows="${rows}" placeholder="${esc(placeholder)}">${esc(ui.mockDraft[id] || "")}</textarea>
+    <div class="row">${pickerId ? memberPicker(pickerId, ui.mockWho) : ""}${button}</div>
+  </div>`;
 }
 
 function renderMock() {
@@ -680,11 +690,14 @@ function renderMock() {
   ui.mockWho = ui.mockWho || M.members[0] || "";
   const chat = M.chat.map((m) => `<li class="${m.mine ? "mine" : ""}"><b>${esc(m.sender)}</b> <span class="muted">${esc(m.time)}</span><div>${esc(m.text)}</div></li>`).join("")
     || `<li class="muted">아직 대화가 없습니다</li>`;
-  const dms = Object.entries(M.dms).map(([member, msgs]) => `<details class="item"><summary><span class="label">1:1 · ${esc(member)} (${msgs.length})</span></summary>
+  const dms = Object.entries(M.dms).map(([member, msgs]) => {
+    const key = `mock-dm:${member}`;
+    return `<details class="item" data-key="${esc(key)}" ${ui.openItems.has(key) ? "open" : ""}>
+    <summary><span class="label">1:1 · ${esc(member)} (${msgs.length})</span></summary>
     <ul class="cites">${msgs.map((m) => `<li><b>${esc(m.sender)}</b> <span class="muted">${esc(m.time)}</span><div>${esc(m.text)}</div></li>`).join("")}</ul>
-    <div class="rewrite"><textarea id="f-dm-${esc(member)}" rows="2" placeholder="${esc(member)}(으)로 답장"></textarea>
-      <button type="button" data-dm="${esc(member)}">보내기</button></div></details>`).join("")
-    || `<p class="muted">아직 1:1이 없습니다</p>`;
+    ${composer(`f-dm-${esc(member)}`, `${member}(으)로 답장`, null,
+               `<button type="button" data-dm="${esc(member)}">보내기</button>`, 3)}</details>`;
+  }).join("") || `<p class="muted">아직 1:1이 없습니다</p>`;
   const events = M.events.map((e) => `<li><b>${esc(e.name)}</b> <span class="muted">${esc(e.when)} · ${esc(e.location)} · ${e.joiners.length}/${e.capacity}명</span>
     <div class="muted">참석: ${e.joiners.map(esc).join(", ") || "아직 없음"}</div>
     <div class="rewrite">${memberPicker(`f-join-who-${esc(e.name)}`, ui.mockWho)}
@@ -703,16 +716,18 @@ function renderMock() {
   const tasks = M.open_tasks.map((t) => `<li><b>${esc(t.id)}</b> <span class="muted">${esc(t.status)} · 마감 ${esc(t.deadline || "")}</span>
     <div>${esc(t.what || "")}</div><button type="button" data-finish="${esc(t.id)}">지금 마감</button></li>`).join("")
     || `<li class="muted">진행 중인 작업이 없습니다</li>`;
-  const posts = M.posts.map((p) => `<details class="item"><summary><span class="label">[${esc(p.category)}] ${esc(p.title)}</span></summary>
-    <pre class="json" style="white-space:pre-wrap">${esc(p.body)}</pre></details>`).join("") || `<p class="muted">아직 글이 없습니다</p>`;
+  const posts = M.posts.map((p) => {
+    const key = `mock-post:${p.title}`;
+    return `<details class="item" data-key="${esc(key)}" ${ui.openItems.has(key) ? "open" : ""}>
+    <summary><span class="label">[${esc(p.category)}] ${esc(p.title)}</span></summary>
+    <pre class="json" style="white-space:pre-wrap">${esc(p.body)}</pre></details>`;
+  }).join("") || `<p class="muted">아직 글이 없습니다</p>`;
 
   $("#view").innerHTML = `<div class="grid">
     <div class="panel">
       <h2>모임 채팅</h2>
       <ul class="cites" style="max-height:420px; overflow-y:auto">${chat}</ul>
-      <div class="rewrite">${memberPicker("f-chat-who", ui.mockWho)}
-        <textarea id="f-chat-text" rows="2" placeholder="멤버로 채팅에 쓰기"></textarea>
-        <button type="button" id="f-chat-send">보내기</button></div>
+      ${composer("f-chat-text", "멤버로 채팅에 쓰기", "f-chat-who", `<button type="button" id="f-chat-send">보내기</button>`)}
       ${ui.mockMsg ? `<div class="note err">${esc(ui.mockMsg.text)}</div>` : ""}
       <h2 style="margin-top:20px">1:1</h2>${dms}
       <h2 style="margin-top:20px">게시판</h2>${posts}
@@ -730,14 +745,20 @@ function renderMock() {
 
 function bindMock() {
   const who = (id) => ($("#" + id) || {}).value || ui.mockWho;
+  // what is half-typed or half-chosen belongs to the person, not to the render: keep it
+  document.querySelectorAll(".compose textarea").forEach((el) =>
+    (el.oninput = () => (ui.mockDraft[el.id] = el.value)));
+  document.querySelectorAll(".compose select").forEach((el) =>
+    (el.onchange = () => (ui.mockDraft[el.id] = el.value)));
   const send = $("#f-chat-send");
   if (send) send.onclick = () => {
     ui.mockWho = who("f-chat-who");
-    mockPost("chat", { member: ui.mockWho, text: $("#f-chat-text").value });
+    mockPost("chat", { member: ui.mockWho, text: $("#f-chat-text").value }, "f-chat-text");
   };
   document.querySelectorAll("[data-dm]").forEach((el) => (el.onclick = () => {
     const member = el.dataset.dm;
-    mockPost("dm", { member, text: ($(`#f-dm-${CSS.escape(member)}`) || {}).value });
+    const id = `f-dm-${member}`;
+    mockPost("dm", { member, text: ($(`#${CSS.escape(id)}`) || {}).value }, id);
   }));
   document.querySelectorAll("[data-join], [data-leave]").forEach((el) => (el.onclick = () => {
     const name = el.dataset.join || el.dataset.leave;

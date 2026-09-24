@@ -181,6 +181,13 @@ form label.check { display: flex; gap: 8px; align-items: baseline; font-weight: 
 .plan ol.cites li { margin-bottom: 4px; }
 .rewrite { display: flex; gap: 8px; margin-top: 8px; align-items: flex-start; }
 .rewrite textarea { flex: 1; }
+/* writing as a member in the mock 모임: the box is what matters, so it gets the whole width and
+   the member picker and send button sit under it instead of squeezing it into a strip */
+.compose { margin-top: 10px; }
+.compose textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
+.compose .row { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+.compose .row select { width: auto; min-width: 150px; }
+.compose .row button { margin-left: auto; }
 .s-draft { background: var(--gray-bg); color: var(--gray); }
 .s-scheduled { background: var(--blue-bg); color: var(--blue); }
 .s-held { background: var(--green-bg); color: var(--green); }
