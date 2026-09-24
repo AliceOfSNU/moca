@@ -161,6 +161,11 @@ def sync_events(events_ui, log, agent="harness"):
         log("정모 목록을 읽지 못함")
         return None
     index = load_index()
+    if not cards and index["events"]:
+        # an empty read is almost always a screen that had not loaded yet; keeping the old list stops the
+        # index (and the knowledge built from it) from flapping between full and empty
+        log("정모 목록이 비어 보여 이전 목록을 유지함")
+        return index["events"]
     mine = {e["name"]: e.get("mine", False) for e in index["events"]}
     now = time.strftime("%Y-%m-%d %H:%M:%S")
     index["events"] = []

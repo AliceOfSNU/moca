@@ -575,13 +575,13 @@ class GoalLoop:
             return "거절", f"없는 실행자입니다: {executor}", False, {}
         if name in ACTIVITY_TOOLS + PROGRAM_ONLY and not goal.get("program_id"):
             return "거절", f"{name}은 프로그램 담당 모카만 쓸 수 있습니다", False, {}
-        if name in PROGRAM_ONLY and arguments.get("program_id") not in (None, goal["program_id"]):
-            return "거절", f"다른 프로그램({arguments.get('program_id')})에는 쓸 수 없습니다", False, {}
         try:
             arguments = json.loads(spec.get("arguments_json") or "{}")
             assert isinstance(arguments, dict)
         except (ValueError, AssertionError):
             return "거절", "arguments_json은 JSON 객체여야 합니다", False, {}
+        if name in PROGRAM_ONLY and arguments.get("program_id") not in (None, goal["program_id"]):
+            return "거절", f"다른 프로그램({arguments.get('program_id')})에는 쓸 수 없습니다", False, {}
         agent = f"goal:{goal['id']}"
         if name in ACTIVITY_TOOLS:
             tools = A.Tools(goal["program_id"], log=self.log, dry_run=self.dry_run)
