@@ -50,6 +50,7 @@ from somoim.notifications import NotificationWatcher
 def log(msg):
     line = f"{time.strftime('%H:%M:%S')} {msg}"
     print(line, flush=True)
+    DATA.mkdir(parents=True, exist_ok=True)
     with open(DATA / "run.log", "a", encoding="utf-8") as f:
         f.write(line + "\n")
 
@@ -57,7 +58,7 @@ def log(msg):
 def open_chat(chat, dev, client):
     if chat.open():
         return True
-    log("UI 트리로 채팅 화면을 찾지 못함 → Astra 화면 조작으로 복구 시도")
+    log("UI 트리로 채팅 화면을 찾지 못함 → Sol 화면 조작으로 복구 시도")
     run_task(dev, f"소모임 앱에서 '{MOIM_NAME}' 모임의 '채팅' 탭 화면을 여세요. 팝업이나 안내창은 닫으세요. "
                   "아무것도 입력하거나 전송하지 마세요.", client=client, blocked={"type"}, max_steps=25, quiet=True)
     return chat.open()

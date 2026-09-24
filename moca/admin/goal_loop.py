@@ -62,7 +62,8 @@ EXECUTOR_CATALOG = f"""- {{type: agent, name: chat_moca}}  모임 채팅에서 �
 - {{type: tool, name: list_events}}      정모 목록.               arguments_json: {{}}
 - {{type: tool, name: read_event}}       정모 하나의 상세.         arguments_json: {{"name": …}}
 - {{type: tool, name: write_post}}       게시판에 글 올리기 (정모 안내 글 등). arguments_json: {{"title", "body"}}
-- {{type: tool, name: research}}         웹에서 사실을 확인해 고를 수 있는 후보를 받는다 (서비스·도구·조건 등). arguments_json: {{"question", "activity_id"?}}
+- {{type: tool, name: research}}         웹에서 사실을 확인한다 — 고를 후보, 예시 하나, 조건, 사실. arguments_json: {{"question", "activity_id"?}}
+    question은 {research.QUESTION_LIMIT}자 이내. 길면 거절된다 — 알아볼 것 하나만 짧게 적고 형식 요구는 빼라.
     멤버 이름은 넣지 마라 — 검색어는 외부로 나간다. 멤버에 대한 것은 조사가 아니라 chat_moca로 묻는다.
 - {{type: tool, name: draft_activity}}   (프로그램 모카만) 다음 회차·단계를 활동으로 기획한다. arguments_json: {{}}
 - {{type: tool, name: update_activity}}  (프로그램 모카만) 활동에 정해진 것을 적는다. arguments_json: {{"activity_id", "slot"?, "value"?, "note"?,
