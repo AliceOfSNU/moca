@@ -28,9 +28,9 @@ import secrets
 import sys
 import time
 
-from harness.tasks import ROOT
+from harness.tasks import DATA_ROOT
 
-DATA = ROOT / "data" / "activities"
+DATA = DATA_ROOT / "activities"
 FILE = DATA / "activities.json"
 
 STATUSES = {"draft": "기획 중", "scheduled": "정모 잡힘", "held": "지난 활동", "canceled": "취소됨"}

@@ -16,9 +16,9 @@ import re
 import sys
 import time
 
-from chatbot.store import ROOT
+from chatbot.store import DATA_ROOT
 
-MEMBERS = ROOT / "data" / "members"
+MEMBERS = DATA_ROOT / "members"
 
 # what 모카 may record for now (personal_intelligence.md: start with these, no personality or relationships)
 KINDS = {

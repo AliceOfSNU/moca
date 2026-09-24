@@ -9,6 +9,7 @@ What the app allows, checked against 소모임 5.8.2:
 """
 import datetime as dt
 import hashlib
+import os
 import pathlib
 import time
 
@@ -16,9 +17,10 @@ from somoim.ui import bounds, first_id, rid
 
 CAPACITY_RANGE = (1, 60)
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+DATA_ROOT = ROOT / os.environ.get("MOCA_DATA", "data")
 # 정모 creation requires a photo. The thumbnail 모카 puts on its 정모 is whatever image sits in
 # data/events/ — drop a new one there to change it — with a plain default if that folder has none.
-PHOTO_DIR = ROOT / "data" / "events"
+PHOTO_DIR = DATA_ROOT / "events"
 FALLBACK_PHOTO = ROOT / "tools" / "event_default.png"
 PHOTO_TYPES = (".png", ".jpg", ".jpeg", ".webp")
 

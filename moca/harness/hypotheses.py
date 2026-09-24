@@ -38,9 +38,9 @@ import secrets
 import sys
 import time
 
-from harness.tasks import ROOT
+from harness.tasks import DATA_ROOT
 
-DATA = ROOT / "data" / "hypotheses"
+DATA = DATA_ROOT / "hypotheses"
 FILE = DATA / "hypotheses.json"
 
 KINDS = {"need": "원하는 것", "behavior": "행동 패턴", "relationship": "멤버 사이의 관계",

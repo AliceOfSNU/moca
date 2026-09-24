@@ -16,10 +16,10 @@ import json
 import sys
 import time
 
-from harness.tasks import ROOT
+from harness.tasks import DATA_ROOT
 
-STATE = ROOT / "data" / "runtime" / "presence.json"
-STATUS = ROOT / "data" / "runtime" / "status.json"   # what the loop is doing right now (read by the dashboard)
+STATE = DATA_ROOT / "runtime" / "presence.json"
+STATUS = DATA_ROOT / "runtime" / "status.json"   # what the loop is doing right now (read by the dashboard)
 GAP = 10 * 60              # the loop reads the screen at least every ~2 minutes; a full board sync can take ~8
 WRITE_EVERY = 30           # heartbeats are frequent; the file only needs to be roughly current
 KEEP = 10                  # sleep periods kept

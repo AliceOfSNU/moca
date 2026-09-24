@@ -16,6 +16,7 @@ import sys
 import time
 
 from chatbot.agent import ROOT, base_prompt
+from chatbot.store import DATA_ROOT
 from chatbot.group_task import render_summary
 from admin.events import (FORMATS, MAX_CREATES_PER_DAY, MODES, check_change, check_create, check_plan,
                            describe_plan, drop_plan, find_event, get_plan, load_index, log_action, mark_mine, remember_created,
@@ -31,7 +32,7 @@ from harness.tasks import (DEADLINE_HOURS, DEFAULT_HOURS, MAX_GROUP_CHAT_PER_DAY
 from cua.android import AndroidDevice
 
 MODEL = "gpt-6-astra"
-STATE = ROOT / "data" / "events" / "admin_state.json"
+STATE = DATA_ROOT / "events" / "admin_state.json"
 
 ADMIN_RULES = f"""
 
@@ -99,11 +100,22 @@ class EventTools:
         self.dry_run = dry_run
         self.done = []
 
+    def _created_anyway(self, name):
+        """The app can be slower than the check that follows it: the 정모 is there, its card was not found yet.
+        Re-read the list before calling a creation failed, or 모카 opens a second one."""
+        if self.ui is None:
+            return False
+        sync_events(self.ui, self.log, agent=self.agent)
+        return find_event(name) is not None
+
     def _run(self, action, args, do):
         if self.dry_run:
             self.log(f"  (실행 안 함) {action} {args}")
             return f"(dry-run) {action} 요청을 확인했습니다: {args}"
         ok = do()
+        if not ok and action in ("create_event", "open_program_signup") and self._created_anyway(args.get("name")):
+            self.log(f"  '{args.get('name')}' 정모는 앱에 만들어져 있었습니다 (확인만 늦었음)")
+            ok = True
         log_action(self.agent, action, args, "ok" if ok else "failed")
         self.done.append((action, args, ok))
         return f"{action} 완료: {args}" if ok else f"{action} 실패: 앱에서 처리하지 못했습니다"

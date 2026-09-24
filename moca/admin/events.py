@@ -9,10 +9,10 @@ import json
 import re
 import time
 
-from chatbot.store import ROOT  # the shared data/ root
+from chatbot.store import DATA_ROOT  # the shared data/ root (MOCA_DATA switches it for a mock run)
 from somoim.events import CAPACITY_RANGE
 
-EVENTS = ROOT / "data" / "events"
+EVENTS = DATA_ROOT / "events"
 INDEX = EVENTS / "index.json"
 ACTIONS = EVENTS / "actions.jsonl"
 MAX_CREATES_PER_DAY = 3

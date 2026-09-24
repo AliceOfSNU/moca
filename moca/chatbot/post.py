@@ -12,13 +12,13 @@ import time
 
 from chatbot.agent import ChatAgent
 from chatbot.config import MOIM_NAMES
-from chatbot.store import ROOT
+from chatbot.store import DATA_ROOT
 from cua.agent import openai_client
 from cua.android import AndroidDevice
 from somoim.board import CATEGORIES, SomoimBoard
 from somoim.chat import SomoimChat
 
-POSTS = ROOT / "data" / "posts"
+POSTS = DATA_ROOT / "posts"
 
 
 def log(msg):

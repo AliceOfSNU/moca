@@ -14,10 +14,10 @@ import re
 import sys
 import time
 
-from chatbot.store import ROOT
+from chatbot.store import DATA_ROOT
 from somoim.board import titles_match
 
-BOARD = ROOT / "data" / "board"
+BOARD = DATA_ROOT / "board"
 INDEX = BOARD / "index.json"
 
 

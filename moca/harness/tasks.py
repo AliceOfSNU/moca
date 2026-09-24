@@ -18,13 +18,17 @@ Usage (from the moca/ directory):
 import argparse
 import datetime as dt
 import json
+import os
 import pathlib
 import secrets
 import sys
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-TASKS = ROOT / "data" / "tasks"
+# every data file lives under here. MOCA_DATA switches it, so a mock run (mock/app.py) keeps
+# its own 모임 state and never writes into the real one.
+DATA_ROOT = ROOT / os.environ.get("MOCA_DATA", "data")
+TASKS = DATA_ROOT / "tasks"
 LOG = TASKS / "log.jsonl"
 
 OPEN = ("queued", "running")

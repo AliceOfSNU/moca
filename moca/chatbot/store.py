@@ -1,12 +1,16 @@
 """Local chat memory: the transcript of everything read and the last read position."""
 import json
+import os
 import pathlib
 import time
 
 from somoim.chat import key
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-DATA = ROOT / "data" / "chat"
+# every data file lives under here. MOCA_DATA switches it, so a mock run (mock/app.py) keeps
+# its own 모임 state and never writes into the real one.
+DATA_ROOT = ROOT / os.environ.get("MOCA_DATA", "data")
+DATA = DATA_ROOT / "chat"
 ANCHOR_SIZE = 5
 ANSWERED_SIZE = 200
 

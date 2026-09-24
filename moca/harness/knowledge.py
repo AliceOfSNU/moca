@@ -19,9 +19,9 @@ import secrets
 import sys
 import time
 
-from harness.tasks import ROOT
+from harness.tasks import DATA_ROOT
 
-KNOWLEDGE = ROOT / "data" / "knowledge"
+KNOWLEDGE = DATA_ROOT / "knowledge"
 RECORDS = KNOWLEDGE / "records.jsonl"
 BASIS = ["reported", "inferred"]   # what a model may claim in a task report
 OBSERVED = "observed"              # a fact the harness saw itself (counts, sign-ups, who joined) — never from a model

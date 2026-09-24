@@ -22,7 +22,7 @@ from admin.events import plans_block
 from chatbot.memory_consent import (ask_prompt, awaiting, classify, due, mark_asked, mark_unclear,
                                     parse_command, set_sharing, shares)
 from chatbot.post_tools import POST_SEARCH_RULES, create_with_post_tools
-from chatbot.store import ROOT, ChatStore
+from chatbot.store import DATA_ROOT, ROOT, ChatStore
 from chatbot import tips
 from harness import devmail, stardust
 from harness.presence import status_block
@@ -34,7 +34,7 @@ from somoim.direct import DirectChat
 
 DM_MODEL = "gpt-5.6-sol"
 DM_REASONING = "xhigh"  # one above high; 1:1 replies are few and personal, so they get the most thought
-DM_DATA = ROOT / "data" / "dm"
+DM_DATA = DATA_ROOT / "dm"
 GREETINGS = DM_DATA / "greetings.json"
 CONSENT = DM_DATA / "consent.json"
 CONSENT_WORD = "네"  # must be typed verbatim so the harness, not the model, decides

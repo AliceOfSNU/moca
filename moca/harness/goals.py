@@ -21,9 +21,9 @@ import sys
 import time
 
 from harness import tasks
-from harness.tasks import ROOT
+from harness.tasks import DATA_ROOT
 
-GOALS = ROOT / "data" / "goals"
+GOALS = DATA_ROOT / "goals"
 GOALS_FILE = GOALS / "goals.json"
 STEPS = GOALS / "steps.jsonl"
 FINISHED = ("achieved", "closed")

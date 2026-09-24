@@ -14,9 +14,9 @@ import re
 import time
 
 from chatbot.config import DEVELOPER
-from chatbot.store import ROOT
+from chatbot.store import DATA_ROOT
 
-QUEUE = ROOT / "data" / "dm" / "dev_requests.jsonl"
+QUEUE = DATA_ROOT / "dm" / "dev_requests.jsonl"
 MAX_PER_DAY = 3      # 개발자도 사람이다. 하루에 쏟아붓지 말고 중요한 것부터.
 MAX_LEN = 600
 KINDS = {"feature": "새 기능·도구 요청", "limit": "하네스 제한 조정 요청",

@@ -4,7 +4,7 @@
 
 let S = null;                 // latest state from the server
 let connected = false;
-const ui = { selectedNode: {}, openItems: new Set(), knowledgeDesc: true, formDraft: null, formMsg: null, planNotes: {}, planMsg: null };
+const ui = { selectedNode: {}, openItems: new Set(), knowledgeDesc: true, formDraft: null, formMsg: null, planNotes: {}, planMsg: null, mockWho: null, mockMsg: null };
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -657,6 +657,100 @@ function bindProgForm() {
   };
 }
 
+// --- view: the mock 소모임 (only when this data root is a mock run) --------------------------------
+async function mockPost(kind, body) {
+  const res = await fetch(`/api/mock/${kind}`, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body) });
+  const out = await res.json();
+  ui.mockMsg = res.ok ? null : { text: out.error };
+  render();
+}
+
+function memberPicker(id, value) {
+  return `<select id="${id}">${S.mock.members.map((m) => `<option value="${esc(m)}" ${value === m ? "selected" : ""}>${esc(m)}</option>`).join("")}</select>`;
+}
+
+function renderMock() {
+  const M = S.mock;
+  if (!M) {
+    $("#view").innerHTML = `<div class="panel"><h2>목업 모임</h2><p class="empty">이 데이터에는 목업 모임이 없습니다.
+      <code>MOCA_DATA=data-mock python run.py --mock</code> 으로 띄운 뒤 대시보드를 <code>--data ../moca/data-mock</code> 으로 여세요.</p></div>`;
+    return;
+  }
+  ui.mockWho = ui.mockWho || M.members[0] || "";
+  const chat = M.chat.map((m) => `<li class="${m.mine ? "mine" : ""}"><b>${esc(m.sender)}</b> <span class="muted">${esc(m.time)}</span><div>${esc(m.text)}</div></li>`).join("")
+    || `<li class="muted">아직 대화가 없습니다</li>`;
+  const dms = Object.entries(M.dms).map(([member, msgs]) => `<details class="item"><summary><span class="label">1:1 · ${esc(member)} (${msgs.length})</span></summary>
+    <ul class="cites">${msgs.map((m) => `<li><b>${esc(m.sender)}</b> <span class="muted">${esc(m.time)}</span><div>${esc(m.text)}</div></li>`).join("")}</ul>
+    <div class="rewrite"><textarea id="f-dm-${esc(member)}" rows="2" placeholder="${esc(member)}(으)로 답장"></textarea>
+      <button type="button" data-dm="${esc(member)}">보내기</button></div></details>`).join("")
+    || `<p class="muted">아직 1:1이 없습니다</p>`;
+  const events = M.events.map((e) => `<li><b>${esc(e.name)}</b> <span class="muted">${esc(e.when)} · ${esc(e.location)} · ${e.joiners.length}/${e.capacity}명</span>
+    <div class="muted">참석: ${e.joiners.map(esc).join(", ") || "아직 없음"}</div>
+    <div class="rewrite">${memberPicker(`f-join-who-${esc(e.name)}`, ui.mockWho)}
+      <button type="button" data-join="${esc(e.name)}">참석</button>
+      <button type="button" data-leave="${esc(e.name)}">취소</button></div></li>`).join("")
+    || `<li class="muted">아직 정모가 없습니다</li>`;
+  const votes = M.votes.map((v) => {
+    const picked = Object.entries(v.choices || {});
+    return `<li><b>${esc(v.title)}</b> <span class="muted">${v.multi ? "복수선택 · " : ""}${picked.length}명 참여${v.closed ? " · 종료됨" : ""}</span>
+      <div class="checks" style="max-height:none">${v.options.map((o, i) => `<label class="check"><input type="checkbox" data-vote="${esc(v.title)}" value="${esc(o)}"> ${esc(o)}
+        <span class="muted">(${picked.filter(([, c]) => c.includes(o)).length})</span></label>`).join("")}</div>
+      <div class="rewrite">${memberPicker(`f-vote-who-${esc(v.title)}`, ui.mockWho)}
+        <button type="button" data-cast="${esc(v.title)}">투표</button></div>
+      <div class="muted">${picked.map(([m, c]) => `${esc(m)}: ${c.map(esc).join(", ")}`).join(" · ")}</div></li>`;
+  }).join("") || `<li class="muted">아직 투표가 없습니다</li>`;
+  const tasks = M.open_tasks.map((t) => `<li><b>${esc(t.id)}</b> <span class="muted">${esc(t.status)} · 마감 ${esc(t.deadline || "")}</span>
+    <div>${esc(t.what || "")}</div><button type="button" data-finish="${esc(t.id)}">지금 마감</button></li>`).join("")
+    || `<li class="muted">진행 중인 작업이 없습니다</li>`;
+  const posts = M.posts.map((p) => `<details class="item"><summary><span class="label">[${esc(p.category)}] ${esc(p.title)}</span></summary>
+    <pre class="json" style="white-space:pre-wrap">${esc(p.body)}</pre></details>`).join("") || `<p class="muted">아직 글이 없습니다</p>`;
+
+  $("#view").innerHTML = `<div class="grid">
+    <div class="panel">
+      <h2>모임 채팅</h2>
+      <ul class="cites" style="max-height:420px; overflow-y:auto">${chat}</ul>
+      <div class="rewrite">${memberPicker("f-chat-who", ui.mockWho)}
+        <textarea id="f-chat-text" rows="2" placeholder="멤버로 채팅에 쓰기"></textarea>
+        <button type="button" id="f-chat-send">보내기</button></div>
+      ${ui.mockMsg ? `<div class="note err">${esc(ui.mockMsg.text)}</div>` : ""}
+      <h2 style="margin-top:20px">1:1</h2>${dms}
+      <h2 style="margin-top:20px">게시판</h2>${posts}
+    </div>
+    <div class="panel">
+      <h2>진행 중인 작업</h2><ul class="cites">${tasks}</ul>
+      <p class="muted" style="font-size:12px">'지금 마감'은 그 작업의 마감을 지금으로 옮깁니다. 다음 회차에 모카가 결과를 걷습니다.</p>
+      <h2 style="margin-top:20px">정모</h2><ul class="cites">${events}</ul>
+      <h2 style="margin-top:20px">투표</h2><ul class="cites">${votes}</ul>
+    </div>
+  </div>`;
+  bindMock();
+  bindDetails();
+}
+
+function bindMock() {
+  const who = (id) => ($("#" + id) || {}).value || ui.mockWho;
+  const send = $("#f-chat-send");
+  if (send) send.onclick = () => {
+    ui.mockWho = who("f-chat-who");
+    mockPost("chat", { member: ui.mockWho, text: $("#f-chat-text").value });
+  };
+  document.querySelectorAll("[data-dm]").forEach((el) => (el.onclick = () => {
+    const member = el.dataset.dm;
+    mockPost("dm", { member, text: ($(`#f-dm-${CSS.escape(member)}`) || {}).value });
+  }));
+  document.querySelectorAll("[data-join], [data-leave]").forEach((el) => (el.onclick = () => {
+    const name = el.dataset.join || el.dataset.leave;
+    mockPost("join", { event: name, member: who(`f-join-who-${name}`), joining: !!el.dataset.join });
+  }));
+  document.querySelectorAll("[data-cast]").forEach((el) => (el.onclick = () => {
+    const title = el.dataset.cast;
+    const options = [...document.querySelectorAll(`[data-vote="${CSS.escape(title)}"]:checked`)].map((b) => b.value);
+    mockPost("vote", { title, member: who(`f-vote-who-${title}`), options });
+  }));
+  document.querySelectorAll("[data-finish]").forEach((el) => (el.onclick = () => mockPost("finish", { task_id: el.dataset.finish })));
+}
+
 // --- routing + live data -------------------------------------------------------------------------
 function render() {
   if (!S) return;
@@ -671,6 +765,7 @@ function render() {
   else if (route === "knowledge") renderKnowledge();
   else if (route === "hypotheses") renderHypotheses();
   else if (route === "programs") renderPrograms();
+  else if (route === "mock") renderMock();
   else if (route === "flow") renderFlow();
   else renderGoals();
   if (keep) {

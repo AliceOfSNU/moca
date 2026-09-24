@@ -92,7 +92,7 @@ def _sources():
             DATA / "knowledge" / "records.jsonl", DATA / "members" / "scope_consent.json",
             DATA / "runtime" / "status.json", DATA / "runtime" / "presence.json",
             DATA / "hypotheses" / "hypotheses.json", DATA / "programs" / "programs.json",
-            DATA / "activities" / "activities.json"] + sorted((DATA / "tasks").glob("t_*.json"))
+            DATA / "activities" / "activities.json", DATA / "mock" / "app.json"] + sorted((DATA / "tasks").glob("t_*.json"))
 
 
 def fingerprint():
@@ -320,6 +320,113 @@ def _program_options(names):
                       if g["status"] not in FINISHED]}
 
 
+# --- the mock 소모임 (moca: mock/app.py) ---------------------------------------------------------
+# Only when this data root is a mock run: then the dashboard is also the app, where one person can write as
+# several members, vote, sign up for a 정모, and finish a running task instead of waiting for its deadline.
+
+MOCK = lambda: DATA / "mock" / "app.json"
+
+
+def _mock():
+    state = _json(MOCK(), None)
+    if state is None:
+        return None
+    tasks = []
+    for path in sorted((DATA / "tasks").glob("t_*.json")):
+        t = _json(path, None)
+        if t and t.get("status") in ("queued", "running"):
+            tasks.append({"id": t["id"], "status": t["status"], "deadline": t.get("deadline"),
+                          "what": t["spec"].get("instruction"), "goal_id": t.get("goal_id")})
+    return {"members": state.get("members", []), "chat": state.get("chat", [])[-40:],
+            "dms": {m: msgs[-20:] for m, msgs in state.get("dms", {}).items()},
+            "posts": list(reversed(state.get("posts", [])))[:10],
+            "events": [e for e in state.get("events", []) if not e.get("canceled")],
+            "votes": list(reversed(state.get("votes", []))), "open_tasks": tasks}
+
+
+def _mock_write(change):
+    """Apply `change(state)` to the mock 소모임, the same file moca reads."""
+    with _write_lock:
+        state = _json(MOCK(), None)
+        if state is None:
+            return None, "목업 모임이 없습니다 (MOCA_DATA=data-mock 로 실행한 데이터인지 확인하세요)"
+        problem = change(state)
+        if problem:
+            return None, problem
+        MOCK().parent.mkdir(parents=True, exist_ok=True)
+        tmp = MOCK().with_suffix(".dashboard.tmp")
+        tmp.write_text(json.dumps(state, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, MOCK())
+    return state, None
+
+
+def _stamp():
+    now = dt.datetime.now()
+    hour = now.hour % 12 or 12
+    return (f"{'오전' if now.hour < 12 else '오후'} {hour}:{now.minute:02d}",
+            f"{now.year}년 {now.month}월 {now.day}일 {'월화수목금토일'[now.weekday()]}요일",
+            now.strftime(FMT))
+
+
+def mock_action(kind, body):
+    """One test action: a member writes, votes, signs up, or a running task is finished now."""
+    who = (body.get("member") or "").strip()
+    text = (body.get("text") or "").strip()
+    time_text, day, at = _stamp()
+    if kind == "chat":
+        if not who or not text:
+            return None, "멤버와 내용을 채우세요"
+        return _mock_write(lambda s: s["chat"].append(
+            {"sender": who, "mine": False, "text": text, "time": time_text, "day": day, "at": at}) and None)
+    if kind == "dm":
+        if not who or not text:
+            return None, "멤버와 내용을 채우세요"
+        def add(s):
+            s.setdefault("dms", {}).setdefault(who, []).append(
+                {"sender": who, "mine": False, "text": text, "time": time_text, "day": day, "at": at})
+        return _mock_write(lambda s: add(s) or None)
+    if kind == "vote":
+        title, picks = (body.get("title") or "").strip(), [o for o in body.get("options") or [] if o]
+        def vote(s):
+            v = next((x for x in s["votes"] if x["title"] == title), None)
+            if v is None:
+                return f"없는 투표입니다: {title}"
+            if not who:
+                return "누구로 투표할지 고르세요"
+            unknown = [o for o in picks if o not in v["options"]]
+            if unknown:
+                return f"없는 선택지입니다: {unknown}"
+            if not v.get("multi") and len(picks) > 1:
+                return "복수선택 투표가 아닙니다"
+            if picks:
+                v.setdefault("choices", {})[who] = picks
+            else:
+                v.get("choices", {}).pop(who, None)
+        return _mock_write(vote)
+    if kind == "join":
+        name, joining = (body.get("event") or "").strip(), bool(body.get("joining", True))
+        def join(s):
+            e = next((x for x in s["events"] if x["name"] == name), None)
+            if e is None:
+                return f"없는 정모입니다: {name}"
+            if not who:
+                return "누구로 신청할지 고르세요"
+            e["joiners"] = sorted(set(e["joiners"]) | {who}) if joining else [n for n in e["joiners"] if n != who]
+        return _mock_write(join)
+    if kind == "finish":
+        task_id = (body.get("task_id") or "").strip()
+        path = DATA / "tasks" / f"{task_id}.json"
+        task = _json(path, None)
+        if task is None:
+            return None, f"없는 작업입니다: {task_id}"
+        task["deadline"] = at
+        tmp = path.with_suffix(".dashboard.tmp")
+        tmp.write_text(json.dumps(task, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, path)
+        return {"task": task_id}, None
+    return None, f"알 수 없는 동작입니다: {kind}"
+
+
 def _loop():
     """Is the loop running, and what is it doing? From the runtime files moca writes."""
     status = _json(DATA / "runtime" / "status.json", {})
@@ -391,6 +498,7 @@ def state():
             "tasks": tasks, "knowledge": knowledge, "knowledge_stats": stats, "flow": _flow(steps, tasks),
             "hypotheses": _hypotheses(names), "hypothesis_options": _hypothesis_options(names),
             "programs": _programs(names), "program_options": _program_options(names),
+            "mock": _mock(),
             # a program agent's own top goal doesn't count: those are the harness's, not the 모임장's
             "can_add_goal": not any(g["parent_id"] is None and not g.get("program_id") and g["status"] not in FINISHED
                                     for g in goals)}
@@ -694,12 +802,18 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path not in ("/api/goals", "/api/hypotheses", "/api/programs", "/api/programs/plan"):
+        if not path.startswith("/api/mock/") and path not in ("/api/goals", "/api/hypotheses", "/api/programs",
+                                                               "/api/programs/plan"):
             return self._send(404, {"error": "not found"})
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
         except ValueError:
             return self._send(400, {"error": "JSON이 아닙니다"})
+        if path.startswith("/api/mock/"):
+            record, problem = mock_action(path.removeprefix("/api/mock/"), body)
+            if problem:
+                return self._send(400, {"error": problem})
+            return self._send(200, {"ok": True})
         if path == "/api/hypotheses":
             record, problem = add_hypothesis(body)
             if problem:

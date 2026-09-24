@@ -49,9 +49,9 @@ import secrets
 import sys
 import time
 
-from harness.tasks import ROOT
+from harness.tasks import DATA_ROOT
 
-DATA = ROOT / "data" / "programs"
+DATA = DATA_ROOT / "programs"
 FILE = DATA / "programs.json"
 
 TYPES = {"linear": "단계형", "recurring": "정기"}
@@ -321,6 +321,38 @@ def containers(records=None):
     their attendee list is a program roster, not who came to something."""
     return {p["container"]["event"]: p["id"] for p in (records if records is not None else load())
             if p.get("container")}
+
+
+def adopt_containers(log=None):
+    """A sign-up 정모 that the app really made but the harness recorded as failed (its card was not found in
+    time) leaves the program with no container and 모카 unable to touch its own 정모. Rather than open a second
+    one, take the 정모 that is already there."""
+    from admin.events import ACTIONS, load_index, mark_mine, set_plan
+    listed = {e["name"]: e for e in load_index()["events"]}
+    adopted = []
+    for p in live():
+        if p.get("container") or plan_of(p) is None:
+            continue
+        name = container_name(p)
+        event = listed.get(name)
+        if event is None:
+            continue
+        post_title = None
+        if ACTIONS.exists():  # the attempt that "failed" recorded which post it linked
+            for line in reversed(ACTIONS.read_text(encoding="utf-8").splitlines()):
+                a = json.loads(line)
+                if a["action"] == "open_program_signup" and a["args"].get("name") == name:
+                    post_title = a["args"].get("post_title")
+                    break
+        set_container(p["id"], name, event["when"], post_title)
+        mark_mine(name)
+        set_plan(name, {"kind": "program_signup", "program_id": p["id"], "post_title": post_title,
+                        "purpose": f"프로그램 '{show(p, p['title'])}' 참가 등록",
+                        "created_by": "harness(adopt)", "created_at": time.strftime("%Y-%m-%d %H:%M:%S")})
+        adopted.append((p["id"], name))
+        if log:
+            log(f"  프로그램 {p['id']}의 참가 등록 정모를 이어 붙임: '{name}' (앱에는 이미 있었음)")
+    return adopted
 
 
 def started(program_id, reason):

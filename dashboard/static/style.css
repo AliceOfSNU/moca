@@ -185,3 +185,5 @@ form label.check { display: flex; gap: 8px; align-items: baseline; font-weight: 
 .s-scheduled { background: var(--blue-bg); color: var(--blue); }
 .s-held { background: var(--green-bg); color: var(--green); }
 .s-canceled { background: var(--red-bg); color: var(--red); }
+.cites li.mine { color: var(--blue); }
+.checks .check span.muted { margin-left: 4px; }

@@ -21,9 +21,9 @@ import re
 import sys
 
 from chatbot.config import DEVELOPER
-from chatbot.store import ROOT, ChatStore
+from chatbot.store import DATA_ROOT, ROOT, ChatStore
 
-BOARD = ROOT / "data" / "board"
+BOARD = DATA_ROOT / "board"
 NAMED_ROWS = 8          # 운영 모카 프롬프트에 이름으로 보여 줄 최근 활동 멤버 수
 RECENT_DAYS = 14
 ME = "MOCA"

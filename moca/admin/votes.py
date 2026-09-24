@@ -10,10 +10,10 @@ import json
 import time
 
 from chatbot.agent import ACCOUNT_NAME
-from chatbot.store import ROOT
+from chatbot.store import DATA_ROOT
 from somoim.votes import MAX_OPTIONS, MIN_OPTIONS, OPTION_LIMIT, TITLE_LIMIT
 
-VOTES = ROOT / "data" / "votes"
+VOTES = DATA_ROOT / "votes"
 INDEX = VOTES / "index.json"
 ACTIONS = VOTES / "actions.jsonl"
 VOTE_TOOLS = ("list_votes", "read_vote", "create_vote", "close_vote", "delete_vote")

@@ -15,9 +15,9 @@ import json
 import sys
 import time
 
-from chatbot.store import ROOT
+from chatbot.store import DATA_ROOT
 
-DATA = ROOT / "data" / "stardust"
+DATA = DATA_ROOT / "stardust"
 AWARDS = DATA / "awards.jsonl"
 STATE = DATA / "state.json"
 

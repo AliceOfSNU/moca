@@ -13,9 +13,9 @@ import time
 
 from chatbot.agent import ACCOUNT_NAME
 from chatbot.posts import load_index, sync_posts
-from chatbot.store import ROOT
+from chatbot.store import DATA_ROOT
 
-BOARD = ROOT / "data" / "board"
+BOARD = DATA_ROOT / "board"
 ACTIONS = BOARD / "actions.jsonl"
 CATEGORY = "모임후기"       # 정모 글을 한곳에 모으려고 고른 칸. 후기만 쓰는 곳은 아니다
 MAX_PER_DAY = 2

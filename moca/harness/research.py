@@ -25,9 +25,9 @@ import os
 import secrets
 import time
 
-from harness.tasks import ROOT
+from harness.tasks import DATA_ROOT
 
-DATA = ROOT / "data" / "research"
+DATA = DATA_ROOT / "research"
 FILE = DATA / "records.jsonl"
 MODEL_EFFORT = "high"
 MAX_FINDINGS = 5
