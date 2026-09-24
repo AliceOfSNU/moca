@@ -27,6 +27,7 @@ import time
 from chatbot.store import DATA_ROOT
 
 STATE = DATA_ROOT / "mock" / "app.json"
+PAGE = 15  # messages a screen holds, for the fakes that stand in for scrolling
 DAYS = "월화수목금토일"
 
 
@@ -76,6 +77,15 @@ def post_message(sender, text, at=None):
                             "day": day_label(at), "at": at.strftime("%Y-%m-%d %H:%M:%S")})
 
 
+def _parts(text, mention=None):
+    """How the real app would break this send up: the input box holds MESSAGE_LIMIT units, and only the first
+    part carries the @mention (somoim/chat.py). The harness recognises its own consent notice by its last
+    part, so the split has to match."""
+    from somoim.chat import MESSAGE_LIMIT, split_message, units
+    parts = split_message(text, MESSAGE_LIMIT - (units(f"@{mention} ") if mention else 0))
+    return [(f"@{mention} " if mention and i == 0 else "") + part for i, part in enumerate(parts)]
+
+
 def post_dm(member, sender, text, at=None):
     at = at or _now()
     state = load()
@@ -107,6 +117,9 @@ def seed(members=None, log=print):
 
 class MockDevice:
     width, height = 1080, 2400
+
+    def __init__(self, *args, **kwargs):
+        pass  # the real one takes scale=, serial= and so on; none of it means anything here
 
     def wake(self):
         return True
@@ -143,6 +156,11 @@ class MockChat:
         chat = load()["chat"]
         return (chat[-1]["text"], chat[-1]["time"]) if chat else None
 
+    def scroll_to_bottom(self, max_swipes=30):
+        """The real one returns (what is on screen, the span it scrolled); the mock has no screen, so it
+        hands back the last messages and no span."""
+        return [dict(m) for m in load()["chat"][-PAGE:]], None
+
     def newest(self):
         chat = load()["chat"]
         return chat[-1] if chat else None
@@ -157,14 +175,16 @@ class MockChat:
         return [dict(m) for m in chat[-backlog:]], False
 
     def send(self, text, mention=None, dry_run=False):
-        text = (f"@{mention} " if mention else "") + text
+        parts = _parts(text, mention)
         if dry_run:
-            return text
-        at = _now()
-        _append("chat", {"sender": account_name(), "mine": True, "text": text, "time": clock(at),
-                         "day": day_label(at), "at": at.strftime("%Y-%m-%d %H:%M:%S")})
-        self.log(f"  (목업) 모임 채팅 전송: {text[:60]}")
-        return text
+            return "\n".join(parts)
+        for part in parts:
+            at = _now()
+            _append("chat", {"sender": account_name(), "mine": True, "text": part, "time": clock(at),
+                             "day": day_label(at), "at": at.strftime("%Y-%m-%d %H:%M:%S")})
+        self.log(f"  (목업) 모임 채팅 전송: {parts[0][:60]}"
+                 + (f" (+{len(parts) - 1}개로 나뉨)" if len(parts) > 1 else ""))
+        return "\n".join(parts)
 
 
 class MockDirect:
@@ -179,6 +199,13 @@ class MockDirect:
     def open(self, open_profile=None):
         return True
 
+    def scroll_to_bottom(self, max_swipes=30):
+        return [dict(m) for m in load()["dms"].get(self.member, [])[-PAGE:]], None
+
+    def newest(self):
+        msgs = load()["dms"].get(self.member, [])
+        return msgs[-1] if msgs else None
+
     def read_since(self, anchor, backlog=30, max_pages=40):
         from somoim.chat import key
         msgs = load()["dms"].get(self.member, [])
@@ -189,16 +216,26 @@ class MockDirect:
         return [dict(m) for m in msgs[-backlog:]], False
 
     def send(self, text, dry_run=False):
+        parts = _parts(text)
         if dry_run:
-            return text
-        post_dm(self.member, account_name(), text)
-        self.log(f"  (목업) 1:1 전송 → {self.member}: {text[:60]}")
-        return text
+            return "\n".join(parts)
+        for part in parts:
+            post_dm(self.member, account_name(), part)
+        self.log(f"  (목업) 1:1 전송 → {self.member}: {parts[0][:60]}"
+                 + (f" (+{len(parts) - 1}개로 나뉨)" if len(parts) > 1 else ""))
+        return "\n".join(parts)
 
 
 def inbox_rows(moim_chat):
-    """Who has a 1:1 open with 모카 (the mock never has unread badges)."""
-    return [{"member": m, "node": None, "unread": False} for m in load()["dms"]]
+    """The 1:1 inbox: one row per conversation, newest first. `preview` is the last message's text — the
+    loop compares it with what it has stored to decide whether a conversation has something new."""
+    rows = []
+    for member, msgs in load()["dms"].items():
+        last = msgs[-1] if msgs else None
+        rows.append({"member": member, "time": last["time"] if last else None,
+                     "preview": last["text"] if last else None, "node": None})
+    rows.sort(key=lambda r: next((m["at"] for m in reversed(load()["dms"][r["member"]])), ""), reverse=True)
+    return rows
 
 
 class MockBoard:
@@ -208,11 +245,19 @@ class MockBoard:
     def open(self):
         return True
 
-    def list_posts(self, category=None, pages=3):
-        posts = load()["posts"]
-        return [{"author": p["author"], "title": p["title"], "time": p["time"], "category": p["category"],
-                 "preview": p["body"][:40], "pinned": p.get("pinned", False)}
-                for p in reversed(posts) if category in (None, "전체", p["category"])]
+    def list_cards(self, category="전체", stop=None, max_pages=30):
+        cards = [{"author": p["author"], "title": p["title"], "time": p["time"], "category": p["category"],
+                  "preview": p["body"][:40], "pinned": p.get("pinned", False)}
+                 for p in reversed(load()["posts"]) if category in (None, "전체", p["category"])]
+        cards.sort(key=lambda c: not c["pinned"])  # pinned notices first, like the real board
+        out = []
+        for card in cards:
+            if stop is not None and not card["pinned"] and stop(card):
+                break
+            out.append(card)
+        return out
+
+    list_posts = list_cards
 
     def read_post(self, card, category="전체"):
         title = card["title"] if isinstance(card, dict) else card
@@ -221,6 +266,11 @@ class MockBoard:
             return None
         return {"title": p["title"], "author": p["author"], "role": p.get("role", ""), "time": p["time"],
                 "category": p["category"], "body": p["body"]}
+
+    def open_author_profile(self, post, category="전체"):
+        """On the real board this taps the writer's name to reach their profile, and from there the 1:1
+        screen. In the mock a 1:1 needs no screen, so there is nothing to open."""
+        return True
 
     def write(self, category, title, body, dry_run=False):
         if dry_run:
@@ -413,19 +463,53 @@ class MockWatcher:
         return []
 
 
+def _real():
+    """The app-facing objects to stand in for, paired with their fakes."""
+    from cua.android import AndroidDevice
+    from somoim.board import SomoimBoard
+    from somoim.chat import SomoimChat
+    from somoim.direct import DirectChat
+    from somoim.direct import inbox_rows as real_inbox_rows
+    from somoim.events import SomoimEvents
+    from somoim.notifications import NotificationWatcher
+    from somoim.votes import SomoimVotes
+    return {"AndroidDevice": (AndroidDevice, MockDevice), "SomoimBoard": (SomoimBoard, MockBoard),
+            "SomoimChat": (SomoimChat, MockChat), "DirectChat": (DirectChat, MockDirect),
+            "SomoimEvents": (SomoimEvents, MockEvents), "SomoimVotes": (SomoimVotes, MockVotes),
+            "NotificationWatcher": (NotificationWatcher, MockWatcher),
+            "inbox_rows": (real_inbox_rows, inbox_rows)}
+
+
 def install(log=print):
-    """Point the loop's app classes at the mock. Call before any session runs."""
-    import chatbot.dm
-    import chatbot.posts
-    import run as run_module
-    import admin.goal_loop
+    """Point the loop's app classes at the mock. Call before any session runs.
+
+    `from somoim.board import SomoimBoard` binds the class in the *importing* module's namespace, so patching
+    the source module alone leaves every importer holding the real one. And run.py runs as __main__: `import
+    run` there makes a second, unrelated copy of the module, so patching that copy changes nothing the loop
+    uses — which is how a --mock run ended up reading and writing the real 모임. So patch by identity across
+    every module already loaded, and refuse to run if any real object is still reachable.
+    """
+    import sys
     seed(log=log)
-    for module in (run_module, chatbot.dm, admin.goal_loop):
-        for name, fake in (("SomoimBoard", MockBoard), ("SomoimEvents", MockEvents), ("SomoimVotes", MockVotes),
-                           ("DirectChat", MockDirect), ("SomoimChat", MockChat), ("inbox_rows", inbox_rows),
-                           ("NotificationWatcher", MockWatcher), ("AndroidDevice", MockDevice)):
-            if hasattr(module, name):
-                setattr(module, name, fake)
+    pairs = _real()
+    for module in list(sys.modules.values()):
+        ns = getattr(module, "__dict__", None)
+        if ns is None or getattr(module, "__name__", "") == __name__:
+            continue  # this module holds the fakes themselves
+        for name, (real, fake) in pairs.items():
+            if ns.get(name) is real:
+                ns[name] = fake
+    # the source modules too: a `from somoim.… import …` inside a function runs after this and would
+    # otherwise hand back the real class
+    for name, (real, fake) in pairs.items():
+        source = sys.modules.get(getattr(real, "__module__", ""))
+        if source is not None and getattr(source, name, None) is real:
+            setattr(source, name, fake)
+    left = [f"{m.__name__}.{name}" for m in list(sys.modules.values()) if getattr(m, "__dict__", None)
+            for name, (real, _) in pairs.items()
+            if m.__dict__.get(name) is real and getattr(m, "__name__", "") != __name__]
+    if left:
+        raise RuntimeError(f"목업 설치 실패: 진짜 앱 객체가 남아 있습니다 {left}")
     log(f"목업 소모임으로 실행합니다 ({STATE})")
 
 
