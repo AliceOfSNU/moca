@@ -43,7 +43,7 @@ from chatbot.post_tools import create_with_post_tools
 from admin import program_agent
 from harness import activities as A
 from harness import goals as G
-from harness import devmail, evidence, hypotheses, knowledge, planner, programs, sources, tasks
+from harness import devmail, evidence, hypotheses, knowledge, planner, programs, research, sources, tasks
 
 MODEL = "gpt-6-astra"
 MAX_STEPS = 4            # steps per wake-up
@@ -52,7 +52,7 @@ MAX_FOCUS_SWITCHES = 8   # goals handled in one round (a subgoal finishing hands
 MAX_MODIFY = 2           # modify_goals steps per wake-up (they don't count towards MAX_STEPS)
 NEW_KNOWLEDGE_SHOWN = 15 # new knowledge listed in one input; the rest is one knowledge_search away
 WRITE_TOOLS = ("create_event", "edit_event", "cancel_event", "set_attendance", "open_program_signup",
-               "create_vote", "close_vote", "delete_vote", "ask_developer", "write_post")
+               "create_vote", "close_vote", "delete_vote", "ask_developer", "write_post", "research")
 PROGRAM_ONLY = ("open_program_signup",)  # 프로그램 담당 모카만, 자기 프로그램에 대해서만
 ACTIVITY_TOOLS = ("draft_activity", "update_activity", "cancel_activity")  # 프로그램 모카만
 READ_TOOLS = ("list_events", "read_event", "list_votes", "read_vote")
@@ -62,6 +62,8 @@ EXECUTOR_CATALOG = f"""- {{type: agent, name: chat_moca}}  모임 채팅에서 �
 - {{type: tool, name: list_events}}      정모 목록.               arguments_json: {{}}
 - {{type: tool, name: read_event}}       정모 하나의 상세.         arguments_json: {{"name": …}}
 - {{type: tool, name: write_post}}       게시판에 글 올리기 (정모 안내 글 등). arguments_json: {{"title", "body"}}
+- {{type: tool, name: research}}         웹에서 사실을 확인해 고를 수 있는 후보를 받는다 (서비스·도구·조건 등). arguments_json: {{"question", "activity_id"?}}
+    멤버 이름은 넣지 마라 — 검색어는 외부로 나간다. 멤버에 대한 것은 조사가 아니라 chat_moca로 묻는다.
 - {{type: tool, name: draft_activity}}   (프로그램 모카만) 다음 회차·단계를 활동으로 기획한다. arguments_json: {{}}
 - {{type: tool, name: update_activity}}  (프로그램 모카만) 활동에 정해진 것을 적는다. arguments_json: {{"activity_id", "slot"?, "value"?, "note"?,
                                                                    "when"?, "location"?, "title"?, "notes"?}}
@@ -585,6 +587,8 @@ class GoalLoop:
         agent = f"goal:{goal['id']}"
         if name in ACTIVITY_TOOLS:
             tools = A.Tools(goal["program_id"], log=self.log, dry_run=self.dry_run)
+        elif name == "research":
+            tools = research.Tools(goal.get("program_id"), log=self.log, dry_run=self.dry_run)
         elif name == "write_post":
             if self.board_ui is None:
                 return "거절", "게시글 도구를 쓸 수 없습니다 (앱 연결 없음)", False, {}

@@ -138,6 +138,10 @@ RULES = """
 - 프로그램은 멤버에게 보이지 않는다. 그래서 아무 설명 없이 회차 이야기부터 꺼내면 멤버 입장에서는 뜬금없다.
   멤버에게 처음 무언가를 물어야 할 때가 되면, 그때 프로그램을 소개해라. 순서는 ① write_post로 소개 글 ②
   open_program_signup으로 참가 등록 정모. 이 둘은 붙여서 한다.
+- 부르기 전에 먼저 알아봐라. 무엇을 쓸지·무엇을 다룰지가 비어 있는 채로 "관심 있으면 신청하세요"라고 하면
+  고르는 일이 멤버에게 넘어간다. 기획이 주제나 도구를 비워 뒀다면 research 작업으로 후보를 확인하고, 소개 글에
+  구체적인 예 한둘을 담아라 ("예를 들면 A나 B 같은 걸 써 볼 생각이야. 뭘 할지는 같이 정해요"). 투표를 열 때도
+  마찬가지다: 후보가 실제로 존재하고 참가 조건을 확인한 것이어야 한다.
 - 소개 글에 담는 것: 무엇을 하는 모임인지, 누구에게 맞는지, 한 회차가 어떻게 진행되는지, 어떻게 참가하는지.
   담지 않는 것: 가설·근거·목표·슬롯 같은 내부 이야기, 아직 정해지지 않은 날짜·장소·발표자. 이건 초대이지
   공지가 아니야. 정해지지 않은 것은 "함께 정해요"라고 쓰면 된다.
@@ -219,7 +223,8 @@ def instructions(program):
 
 def context(program):
     """The program agent's own world: its program, its activities, and what else is on the calendar."""
-    lines = [P.line(program), "", A.block(program["id"])]
+    from harness import research
+    lines = [P.line(program), "", A.block(program["id"]), "", research.block(program["id"])]
     others = [a for a in A.load() if a["program_id"] != program["id"] and a["status"] in A.OPEN]
     lines += ["", "## 다른 프로그램의 활동 (겹치지 않게 참고만)"] + (
         [f"- {a.get('when') or '시각 미정'} {a['title']} ({a['program_id']})" for a in others] or ["(없음)"])
