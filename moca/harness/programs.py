@@ -104,6 +104,11 @@ def _similar(a, b):
     return bool(a and b) and difflib.SequenceMatcher(None, a, b).ratio() >= SIMILAR
 
 
+def _given(value):
+    """Did the model actually mean to fill this? Models pad the fields of the other type with "" or 0."""
+    return value not in (None, "", 0) and not (isinstance(value, str) and not value.strip())
+
+
 def _int(value, key, label):
     lo, hi = RANGES[key]
     if isinstance(value, bool) or not isinstance(value, int) or not lo <= value <= hi:
@@ -177,7 +182,8 @@ def create(type=None, title=None, purpose=None, hypotheses=None, reasoning=None,
         duration_days, problem = _int(duration_days, "duration_days", "duration_days")
         if problem:
             return None, problem + " (합리적인 기간 안에 끝나야 합니다)"
-        if any(v not in (None, "") for v in (interval_days, repeat_kind, repeat_count, repeat_condition, format)):
+        # a field the model filled with a placeholder (empty string, 0) is simply not given
+        if any(_given(v) for v in (interval_days, repeat_kind, repeat_count, repeat_condition, format)):
             return None, "단계형 프로그램에는 정기 프로그램 항목(interval_days, repeat_*, format)을 쓰지 않습니다"
     else:
         if not text["format"]:
@@ -197,7 +203,7 @@ def create(type=None, title=None, purpose=None, hypotheses=None, reasoning=None,
             return None, "repeat_kind가 conditional이면 repeat_condition(언제까지 이어가거나 멈추는지)이 필요합니다"
         if repeat_kind != "conditional" and text["condition"]:
             return None, "repeat_condition은 repeat_kind가 conditional일 때만 적습니다"
-        if any(v not in (None, "") for v in (entry_state, exit_state, measure, duration_days)):
+        if any(_given(v) for v in (entry_state, exit_state, measure, duration_days)):
             return None, "정기 프로그램에는 단계형 항목(entry_state, exit_state, measure, duration_days)을 쓰지 않습니다"
 
     # names anywhere in the text become placeholders too, tagged as a target or not
