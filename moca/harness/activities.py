@@ -238,8 +238,19 @@ def sweep(log=None):
     return changed
 
 
+TYPE_LABELS = {"individual_study": "각자 스터디", "presentation": "발표", "hands_on": "실습", "discussion": "토론",
+               "show_and_tell": "결과물 공유", "clinic": "질문·상담", "collab_project": "함께 만들기",
+               "social": "친목", "other": "기타"}
+MODE_LABELS = {"offline": "오프라인", "online": "온라인", "either": "온·오프라인 중 택일"}
+
+
+def kind(a):
+    return a.get("type_label") or TYPE_LABELS.get(a.get("activity_type"), a.get("activity_type") or "종류 미정")
+
+
 def line(a, full=True):
-    out = f"- {a['id']} [{which(a)} · {STATUSES[a['status']]}] {a['title']}"
+    out = (f"- {a['id']} [{which(a)} · {STATUSES[a['status']]} · {kind(a)}"
+           f" · {MODE_LABELS.get(a.get('mode'), a.get('mode'))}] {a['title']}")
     if a.get("when") or a.get("location"):
         out += f" ({a.get('when') or '시각 미정'}, {a.get('location') or '장소 미정'})"
     if a.get("event"):
