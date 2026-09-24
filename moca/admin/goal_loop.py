@@ -45,7 +45,7 @@ from harness import activities as A
 from harness import goals as G
 from harness import devmail, evidence, hypotheses, knowledge, planner, programs, research, sources, tasks
 
-MODEL = "gpt-6-astra"
+MODEL = "gpt-6-sol"
 MAX_STEPS = 4            # steps per wake-up
 MAX_REJECTIONS = 2       # re-asks after a step the harness refused
 MAX_FOCUS_SWITCHES = 8   # goals handled in one round (a subgoal finishing hands over to its parent)

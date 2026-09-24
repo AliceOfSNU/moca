@@ -1,7 +1,7 @@
 ### Writing a Post
 Operator-requested only: 모카 never writes a post because a member asked.
 
-- `python -m chatbot.post --category 가입인사 "요청"` — 모카 (GPT-6 Astra, `post_prompt()`) drafts a title (≤40 chars) and body
+- `python -m chatbot.post --category 가입인사 "요청"` — 모카 (GPT-6 Sol, `post_prompt()`) drafts a title (≤40 chars) and body
   from the request, the profile and `moca_capabilities.md`. The draft is saved to `data/posts/<timestamp>.json` and shown;
   it's published only after confirmation (`--yes` skips the prompt).
 - `--dry-run` fills the write screen, verifies title/body/category from the UI tree, then clears it and leaves.
@@ -42,7 +42,7 @@ There is a sample implementation under this directory, taken from a different un
   Comments are not saved. Manual run: `python -m chatbot.posts sync [--full]`.
 - **Tools** (`chatbot/post_tools.py`, adapted from `fops.py`, scoped to `data/board`): `list_posts(category, author)`,
   `grep_search(pattern, path, context)` (case-insensitive, with surrounding lines) and `read_file(path, start_line, end_line)`
-  (unranged reads limited to 150 lines). Both the 모임 chat 모카 (Astra) and the 1:1 모카 (Sol) get them, with
+  (unranged reads limited to 150 lines). Both the 모임 chat 모카 (Sol) and the 1:1 모카 (Sol) get them, with
   `POST_SEARCH_RULES` in their prompts: search before answering board-type questions, name the post used, and don't
   spread personal details from 가입인사 posts to others unless needed.
 - 가입인사 greetings now come from the saved index instead of a separate listing of the 가입인사 board.

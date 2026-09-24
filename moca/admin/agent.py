@@ -31,7 +31,7 @@ from harness.tasks import (DEADLINE_HOURS, DEFAULT_HOURS, MAX_GROUP_CHAT_PER_DAY
                            finished_group_chat_tasks, group_chat_tasks)
 from cua.android import AndroidDevice
 
-MODEL = "gpt-6-astra"
+MODEL = "gpt-6-sol"
 STATE = DATA_ROOT / "events" / "admin_state.json"
 
 ADMIN_RULES = f"""

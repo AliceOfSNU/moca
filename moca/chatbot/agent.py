@@ -9,7 +9,7 @@ from chatbot.member_tool import RECORDING_RULES, TOOL as MEMBER_TOOL, MemberNote
 from chatbot.post_tools import POST_SEARCH_RULES, create_with_post_tools
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-MODEL = "gpt-6-astra"
+MODEL = "gpt-6-sol"
 REASONING_EFFORT = "high"  # group chat 모카; the API default for this model is "medium"
 ACCOUNT_NAME = "MOCA"  # 모카's display name in 소모임
 
