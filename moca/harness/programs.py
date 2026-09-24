@@ -249,6 +249,74 @@ def plan_of(p):
     return p["recurring"]["activity_template"] if p["type"] == "recurring" else p["linear"]["sketch"]
 
 
+# --- the program's face in the app: a 정모 members can sign up to --------------------------------------
+# A program is otherwise invisible to members. Its container 정모 gives it one place in the app: the 참석 button
+# is "I'm in", the attendee list is the roster, the linked post is the invitation, and 소모임 opens a chat room
+# for its participants. It is not a gathering — no one meets at its date, which is only the program's horizon.
+# The app can never change a 정모's date, so the harness picks it rather than the model.
+
+MARK = "📋 "                              # every container 정모 starts with this, so no one takes it for a session
+PLACE = "참가 등록 (실제 모임 아님)"        # the app's 장소 field (20 units), where the caveat fits
+HORIZON_DAYS = 90                        # for programs that don't end on their own
+EVENT_UNITS = 20                         # the app keeps 20 UTF-16 units of 정모 이름 and 장소 (measured 2026-09-24)
+
+
+def container_name(p):
+    from somoim.chat import units
+    name = MARK + show(p, p["title"])
+    return name if units(name) <= EVENT_UNITS else None
+
+
+def container_when(p, now=None):
+    """The program's horizon: when it should be over. Linear programs end at their duration, a fixed-count
+    recurring program after its repeats, and anything open-ended gets a horizon it can be renewed past."""
+    import datetime as dt
+    now = now or dt.datetime.now()
+    start = dt.datetime.strptime(p["started_at"], "%Y-%m-%d %H:%M:%S") if p.get("started_at") else now
+    if p["type"] == "linear":
+        days = (start - now).days + p["linear"]["duration_days"]
+    else:
+        rep = p["recurring"]["repeats"]
+        days = rep["count"] * p["recurring"]["interval_days"] if rep["kind"] == "constant" else HORIZON_DAYS
+    days = max(7, min(days, 179))  # at least a week out, inside the app's 180-day limit
+    return (now + dt.timedelta(days=days)).replace(hour=20, minute=0, second=0, microsecond=0)
+
+
+def check_container(program_id):
+    """May this program open its sign-up 정모? Returns (program, None) or (None, why not)."""
+    p = next((x for x in load() if x["id"] == program_id), None)
+    if p is None:
+        return None, f"없는 프로그램입니다: {program_id}"
+    if p["status"] not in OPEN_FOR_ACTIVITIES:
+        return None, f"프로그램 {program_id}는 지금 '{STATUSES[p['status']]}' 상태입니다"
+    if plan_of(p) is None:
+        return None, f"프로그램 {program_id}의 기획이 아직 없습니다"
+    if p.get("container"):
+        return None, (f"이 프로그램의 참가 등록 정모는 이미 있습니다: '{p['container']['event']}' "
+                      f"({p['container']['when']})")
+    if container_name(p) is None:
+        return None, (f"프로그램 이름이 길어 정모 이름({EVENT_UNITS}자)에 담기지 않습니다: '{show(p, p['title'])}'. "
+                      "로하에게 이름을 줄여 달라고 부탁하세요")
+    return p, None
+
+
+def set_container(program_id, event, when, post_title):
+    records = load()
+    p = next(x for x in records if x["id"] == program_id)
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    p["container"] = {"event": event, "when": when, "post_title": post_title, "opened_at": now}
+    p["updated_at"] = now
+    save(records)
+    return p
+
+
+def containers(records=None):
+    """{정모 이름: 프로그램 id} for the sign-up 정모 — they are not gatherings, so they pay no 별조각 and
+    their attendee list is a program roster, not who came to something."""
+    return {p["container"]["event"]: p["id"] for p in (records if records is not None else load())
+            if p.get("container")}
+
+
 def started(program_id, reason):
     """A program's first activity makes it active."""
     records = load()
@@ -333,6 +401,9 @@ def line(p, by_id=None):
     acts = [a for a in A.for_program(p["id"]) if a["status"] != "canceled"]
     for a in acts:
         out += f"\n  활동 {A.line(a, full=False)[2:]}"
+    c = p.get("container")
+    out += (f"\n  참가 등록 정모: '{c['event']}' ({c['when']}까지) · 소개 글 「{c['post_title']}」" if c
+            else "\n  참가 등록 정모: 아직 없음 (멤버에게 처음 물을 때 소개 글과 함께 연다)")
     if p.get("agent"):
         out += f"\n  담당 에이전트: 목표 {p['agent']['goal_id']}"
     for f in flags(p, by_id):

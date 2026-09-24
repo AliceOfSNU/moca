@@ -51,8 +51,9 @@ MAX_REJECTIONS = 2       # re-asks after a step the harness refused
 MAX_FOCUS_SWITCHES = 8   # goals handled in one round (a subgoal finishing hands over to its parent)
 MAX_MODIFY = 2           # modify_goals steps per wake-up (they don't count towards MAX_STEPS)
 NEW_KNOWLEDGE_SHOWN = 15 # new knowledge listed in one input; the rest is one knowledge_search away
-WRITE_TOOLS = ("create_event", "edit_event", "cancel_event", "set_attendance",
+WRITE_TOOLS = ("create_event", "edit_event", "cancel_event", "set_attendance", "open_program_signup",
                "create_vote", "close_vote", "delete_vote", "ask_developer", "write_post")
+PROGRAM_ONLY = ("open_program_signup",)  # 프로그램 담당 모카만, 자기 프로그램에 대해서만
 ACTIVITY_TOOLS = ("draft_activity", "update_activity", "cancel_activity")  # 프로그램 모카만
 READ_TOOLS = ("list_events", "read_event", "list_votes", "read_vote")
 
@@ -65,6 +66,7 @@ EXECUTOR_CATALOG = f"""- {{type: agent, name: chat_moca}}  모임 채팅에서 �
 - {{type: tool, name: update_activity}}  (프로그램 모카만) 활동에 정해진 것을 적는다. arguments_json: {{"activity_id", "slot"?, "value"?, "note"?,
                                                                    "when"?, "location"?, "title"?, "notes"?}}
 - {{type: tool, name: cancel_activity}}  (프로그램 모카만) 기획 중인 활동을 접는다. arguments_json: {{"activity_id", "reason"}}
+- {{type: tool, name: open_program_signup}} (프로그램 모카만) 프로그램의 참가 등록 정모를 연다. arguments_json: {{"program_id", "post_title"}}
 - {{type: tool, name: create_event}}     정모 만들기 (활동 하나를 실제 정모로). arguments_json: {{"name", "when": "YYYY-MM-DD HH:MM", "location", "post_title",
                                                                    "activity_id", "capacity"?, "expense"?,
                                                                    "purpose", "mode": "offline"|"online"|"hybrid", "topic",
@@ -571,8 +573,10 @@ class GoalLoop:
         name = executor.get("name")
         if executor.get("type") != "tool" or name not in WRITE_TOOLS + READ_TOOLS + ACTIVITY_TOOLS:
             return "거절", f"없는 실행자입니다: {executor}", False, {}
-        if name in ACTIVITY_TOOLS and not goal.get("program_id"):
+        if name in ACTIVITY_TOOLS + PROGRAM_ONLY and not goal.get("program_id"):
             return "거절", f"{name}은 프로그램 담당 모카만 쓸 수 있습니다", False, {}
+        if name in PROGRAM_ONLY and arguments.get("program_id") not in (None, goal["program_id"]):
+            return "거절", f"다른 프로그램({arguments.get('program_id')})에는 쓸 수 없습니다", False, {}
         try:
             arguments = json.loads(spec.get("arguments_json") or "{}")
             assert isinstance(arguments, dict)

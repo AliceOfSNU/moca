@@ -16,7 +16,9 @@ EVENTS = ROOT / "data" / "events"
 INDEX = EVENTS / "index.json"
 ACTIONS = EVENTS / "actions.jsonl"
 MAX_CREATES_PER_DAY = 3
-NAME_LIMIT = 40
+# the app keeps 20 UTF-16 units of the 정모 이름 and 장소 and silently drops the rest (measured 2026-09-24;
+# an emoji costs 2). 40 was a guess, and names longer than 20 were being cut without anyone noticing.
+NAME_LIMIT = LOCATION_LIMIT = 20
 
 
 def load_index():
@@ -107,6 +109,8 @@ def check_plan(plan, location, partial=False):
 def describe_plan(plan, short=False):
     if not plan:
         return ""
+    if plan.get("kind") == "program_signup":  # not a gathering: the program's sign-up 정모
+        return f"{plan['purpose']} · 이 날짜에 모이는 자리가 아니라, 프로그램에 참가 신청하는 곳"
     head = f"{MODES.get(plan['mode'], plan['mode'])} · {FORMATS.get(plan['format'], plan['format'])} · 주제: {plan['topic']}"
     if short:
         return head
@@ -125,6 +129,8 @@ def plans_block():
         lines.append(f"- '{name}' — {event['when_text']}, {event['location']}, {event['joiners']}/{event['capacity']}명\n"
                      f"  {describe_plan(plan)}")
     lines.append("- 멤버가 물으면 이 계획대로 알려 줘. 계획에 없는 내용은 지어내지 말고, 정해지지 않았다고 말해.")
+    lines.append("- '참가 등록'이라고 적힌 정모는 그 날짜에 모이는 자리가 아니라 프로그램 참가 신청이야. "
+                 "실제 모임은 회차마다 따로 열린다고 알려 줘.")
     return "\n".join(lines)
 
 
@@ -210,8 +216,11 @@ def creates_today():
 # --- rules ---------------------------------------------------------------------------
 
 def check_create(name, when, location, capacity, expense):
-    if not name or len(name) > NAME_LIMIT:
-        return f"정모 이름은 1~{NAME_LIMIT}자여야 합니다"
+    from somoim.chat import units
+    if not name or units(name) > NAME_LIMIT:
+        return f"정모 이름은 1~{NAME_LIMIT}자여야 합니다 (앱이 그만큼만 받습니다. 이모지는 2자)"
+    if location and units(location) > LOCATION_LIMIT:
+        return f"정모 장소는 {LOCATION_LIMIT}자 이내여야 합니다 (앱이 그만큼만 받습니다)"
     if when <= dt.datetime.now() + dt.timedelta(minutes=30):
         return "정모 일시는 지금보다 30분 이상 뒤여야 합니다"
     if when > dt.datetime.now() + dt.timedelta(days=180):

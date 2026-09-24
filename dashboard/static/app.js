@@ -485,6 +485,12 @@ function planHtml(p) {
 
 const actStatus = { draft: "기획 중", scheduled: "정모 잡힘", held: "지난 활동", canceled: "취소됨" };
 
+function signupHtml(p) {
+  const c = p.container;
+  if (!c) return `<div class="hypo-line muted" style="font-size:12px"><b>참가 등록 정모</b> 아직 없음 — 멤버에게 처음 물을 때 소개 글과 함께 열립니다</div>`;
+  return `<div class="hypo-line"><b>참가 등록 정모</b> ${esc(c.event)} <span class="muted">· ${esc(c.when)}까지 · 소개 글 「${esc(c.post_title)}」 · 참가자 채팅방 있음</span></div>`;
+}
+
 function activitiesHtml(p) {
   const acts = p.activities || [];
   const agent = p.agent ? `<span class="muted">담당 모카: 목표 ${esc(p.agent.goal_id)}</span>` : `<span class="muted">담당 모카 없음 (기획이 채워지면 붙습니다)</span>`;
@@ -542,6 +548,7 @@ function programCard(p) {
     <div class="hypo-line"><b>존재 근거</b> ${esc(sh.reasoning)}</div>
     <ul class="cites">${grounds}</ul>
     ${planHtml(p)}
+    ${signupHtml(p)}
     ${activitiesHtml(p)}
     ${rewriteHtml(p)}
     ${ui.planMsg && ui.planMsg.id === p.id ? `<div class="note ${ui.planMsg.ok ? "ok" : "err"}">${esc(ui.planMsg.text)}</div>` : ""}

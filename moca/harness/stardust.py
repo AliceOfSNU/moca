@@ -223,7 +223,9 @@ def _sweep_votes(votes_ui, state, log, dry_run, me):
 
 def _sweep_events(events_ui, state, log, dry_run, me):
     """정모 pays after it is over, to whoever was on the attendee list when it started. The list is
-    snapshotted on every sweep, because a 정모 that has passed may not stay in the app's list."""
+    snapshotted on every sweep, because a 정모 that has passed may not stay in the app's list.
+    A program's sign-up 정모 is not a gathering — nobody meets at its date — so it pays nobody."""
+    from harness.programs import containers
     from admin.events import load_index
     events = load_index()["events"]
     log(f"  정모 {len(events)}개 참석자 확인")
@@ -233,9 +235,12 @@ def _sweep_events(events_ui, state, log, dry_run, me):
             continue
         state["events"].setdefault(event["name"], {}).update(
             when=event["when"], participants=[n for n in names if n != me], seen_at=time.strftime("%Y-%m-%d %H:%M"))
-    now = time.strftime("%Y-%m-%d %H:%M")
+    now, signup = time.strftime("%Y-%m-%d %H:%M"), containers()
     for name, record in state["events"].items():
         if record.get("paid") or not record.get("when") or record["when"] > now:
+            continue
+        if name in signup:  # 프로그램 참가 등록 정모: 모이는 자리가 아니라 명부다
+            record["paid"] = True
             continue
         log(f"  정모 '{name}' 종료 — 참석자 {len(record['participants'])}명에게 별조각")
         if dry_run:

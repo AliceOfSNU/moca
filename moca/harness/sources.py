@@ -153,20 +153,31 @@ def sync_signups(existing, added):
     Names follow the usual rule — shown only for members who allowed 모임 운영 use — as vote choices do.
     Whether someone actually came can't be seen from the app, so there is nothing about attendance here."""
     from admin.events import load_index
+    from harness.programs import containers, load as load_programs, show
     from harness.stardust import load_sweep
     listed = {e["name"]: e for e in load_index()["events"]}
+    signup = containers()
+    titles = {p["id"]: show(p, p["title"]) for p in load_programs()}
     for name, snap in load_sweep()["events"].items():
         people = snap.get("participants", [])
         event = listed.get(name, {})
         cap = f" / 정원 {event['capacity']}명" if event.get("capacity") else ""
         origin = {"channel": "event", "event": name}
-        _put(existing, f"event:{name}:signups", _digest(len(people), event.get("capacity")),
-             f"정모 '{name}' ({snap.get('when')}): 참석 신청 {len(people)}명{cap} ({snap.get('seen_at')} 기준)",
-             [], [f"event:{name}"], origin, added, basis=knowledge.OBSERVED)
+        # a program's sign-up 정모 is a roster, not a gathering: what it records is who joined the program
+        program = titles.get(signup.get(name))
+        if program:
+            _put(existing, f"event:{name}:signups", _digest(len(people), event.get("capacity")),
+                 f"프로그램 '{program}': 참가 신청 {len(people)}명{cap} ({snap.get('seen_at')} 기준)",
+                 [], [f"event:{name}"], origin, added, basis=knowledge.OBSERVED)
+        else:
+            _put(existing, f"event:{name}:signups", _digest(len(people), event.get("capacity")),
+                 f"정모 '{name}' ({snap.get('when')}): 참석 신청 {len(people)}명{cap} ({snap.get('seen_at')} 기준)",
+                 [], [f"event:{name}"], origin, added, basis=knowledge.OBSERVED)
         for who in people:
             _put(existing, f"event:{name}:{who}", _digest("signed_up"),
-                 f"{{s0}}님이 정모 '{name}'에 참석 신청했다", [who], [f"event:{name}"], origin, added,
-                 basis=knowledge.OBSERVED)
+                 f"{{s0}}님이 프로그램 '{program}'에 참가 신청했다" if program
+                 else f"{{s0}}님이 정모 '{name}'에 참석 신청했다",
+                 [who], [f"event:{name}"], origin, added, basis=knowledge.OBSERVED)
         if name not in listed:
             continue  # gone from the app (over or deleted): its last list stands
         prefix = f"event:{name}:"

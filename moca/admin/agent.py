@@ -158,6 +158,37 @@ class EventTools:
             result += f" — 프로그램 {act['program_id']}의 {activities.which(act)} 활동으로 잡았습니다"
         return result
 
+    def open_program_signup(self, program_id=None, post_title=None, **_):
+        """A program's own 정모: members sign up to the program there, and 소모임 gives it a chat room.
+        Every field is the harness's (the app can never change a 정모's date), so the model only says which
+        program and which post."""
+        from harness import programs
+        from somoim.events import CAPACITY_RANGE
+        p, problem = programs.check_container(program_id)
+        if not problem and not (post_title or "").strip():
+            problem = ("프로그램을 소개하는 게시글이 있어야 합니다. write_post로 초대 글을 먼저 쓰고 제목을 주세요")
+        if not problem and find_post(post_title) is None:
+            problem = f"'{post_title}' 게시글을 찾을 수 없습니다. 모카가 쓴 글만 연동할 수 있습니다"
+        if problem:
+            return f"열지 않았습니다: {problem}"
+        name, at = programs.container_name(p), programs.container_when(p)
+        when = at.strftime("%Y-%m-%d %H:%M")
+        size = (p["users"]["size"] or {}).get("max")
+        capacity = min(max(int(size or 30), CAPACITY_RANGE[0]), CAPACITY_RANGE[1])
+        args = {"name": name, "when": when, "location": programs.PLACE, "capacity": capacity,
+                "expense": 0, "post_title": post_title, "program_id": program_id}
+        result = self._run("open_program_signup", args,
+                           lambda: self.ui.create(name, at, programs.PLACE, 0, capacity, post_title=post_title))
+        if result.startswith("open_program_signup 완료"):
+            remember_created(name, at, programs.PLACE, capacity, 0)
+            programs.set_container(program_id, name, when, post_title)
+            set_plan(name, {"kind": "program_signup", "program_id": program_id, "post_title": post_title,
+                            "purpose": f"프로그램 '{programs.show(p, p['title'])}' 참가 등록",
+                            "created_by": self.agent, "created_at": time.strftime("%Y-%m-%d %H:%M:%S")})
+            result += (f" — 프로그램 {program_id}의 참가 등록 정모입니다 ({when}까지). 참석 신청이 곧 참가 신청이고, "
+                       "이 정모의 채팅방이 참가자들의 방이 됩니다.")
+        return result
+
     def edit_event(self, name=None, new_name=None, location=None, capacity=None, expense=None,
                    purpose=None, mode=None, topic=None, format=None, format_note=None):
         problem = check_change(name)
@@ -222,7 +253,7 @@ class EventTools:
                             "앱의 정모에는 이름·일시·장소·비용·정원밖에 없어서, 왜 열고 어떻게 진행하는지는 "
                             "계획(purpose·mode·topic·format)으로 함께 남긴다. 계획은 아직 멤버에게 보이지 않는다.",
              "parameters": {"type": "object", "properties": {
-                 "name": {"type": "string", "description": "정모 이름 (40자 이내)"},
+                 "name": {"type": "string", "description": "정모 이름 (20자 이내. 이모지는 2자)"},
                  "when": {"type": "string", "description": when_help},
                  "location": {"type": "string", "description": "장소. 온라인이면 '온라인(Google Meet)'처럼"},
                  "capacity": {"type": "integer", "description": "정원 1~60, 기본 20"},
@@ -234,6 +265,14 @@ class EventTools:
                  **PLAN_FIELDS},
                  "required": ["name", "when", "location", "post_title", "purpose", "mode", "topic", "format",
                               "activity_id"]}},
+            {"type": "function", "name": "open_program_signup",
+             "description": "프로그램의 참가 등록 정모를 연다 (프로그램 담당 모카만). 실제 모임이 아니라 프로그램의 "
+                            "얼굴이다: 멤버는 참석 버튼으로 참가하고, 연동된 소개 글이 초대장이 되며, 이 정모의 "
+                            "채팅방이 참가자들의 방이 된다. 이름·일시·장소·정원은 하네스가 정한다.",
+             "parameters": {"type": "object", "properties": {
+                 "program_id": {"type": "string", "description": "프로그램 id (p_…)"},
+                 "post_title": {"type": "string", "description": "먼저 write_post로 쓴 프로그램 소개 글의 제목"}},
+                 "required": ["program_id", "post_title"]}},
             {"type": "function", "name": "edit_event",
              "description": "모카가 만든 정모의 이름·장소·정원·비용이나 계획을 바꾼다. 날짜와 시간은 앱에서 바꿀 수 없다. "
                             "계획만 바꾸면 앱은 건드리지 않는다.",
@@ -254,6 +293,7 @@ class EventTools:
 
     def handlers(self):
         return {"list_events": self.list_events, "read_event": self.read_event, "create_event": self.create_event,
+                "open_program_signup": self.open_program_signup,
                 "edit_event": self.edit_event, "cancel_event": self.cancel_event, "set_attendance": self.set_attendance}
 
 
