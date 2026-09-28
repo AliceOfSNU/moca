@@ -279,7 +279,11 @@ class ChatAgent:
               "- 정모나 활동을 계획하려고 묻는 거라는 걸 자연스럽게 밝혀.\n"
               "- 모두에게 편하게 묻는 1~3문장. @멘션, 목록, 마크다운은 쓰지 마.\n"
               "- 운영 모카, 내부 작업, 부탁받은 일이라는 이야기는 하지 마.\n"
-              "- 지금 대화 흐름이 있다면 끊지 않게 부드럽게 꺼내.\n메시지 텍스트만 출력해.")
+              "- 지금 대화 흐름이 있다면 끊지 않게 부드럽게 꺼내.\n"
+              "- 위 기록에서 네가 방금 한 말을 봐. 이미 안내한 것(날짜, 장소, 신청 방법, 마감처럼)은 다시 쓰지 마. "
+              "같은 말을 11분 만에 두 번 하면 멤버는 네가 자기 말을 못 들었다고 느낀다. 아직 답을 못 받은 것만 "
+              "짧게 물어. 방금 누군가에게 답하면서 이미 물어봤다면, 그 이야기에 이어서 한 걸음만 더 나가.\n"
+              "메시지 텍스트만 출력해.")
 
     def task_check(self, instruction, window, started_at, deadline, may_follow_up=False, left=0):
         """Has the 모임 answered well enough to wrap up early, and is a follow-up message worth sending?
