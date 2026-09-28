@@ -43,7 +43,7 @@ from chatbot.post_tools import create_with_post_tools
 from admin import program_agent
 from harness import activities as A
 from harness import goals as G
-from harness import devmail, evidence, hypotheses, knowledge, planner, programs, research, sources, tasks
+from harness import devmail, direct, evidence, hypotheses, knowledge, planner, programs, research, sources, tasks
 
 MODEL = "gpt-6-sol"
 MAX_STEPS = 4            # steps per wake-up
@@ -59,6 +59,12 @@ READ_TOOLS = ("list_events", "read_event", "list_votes", "read_vote")
 
 EXECUTOR_CATALOG = f"""- {{type: agent, name: chat_moca}}  모임 채팅에서 멤버들에게 묻고 답을 모아 결과(요약 + 출처 있는 지식)로 돌려준다.
     spec: instruction("무엇을 알아낼지" 한 문장), deadline_hours(1~72, 기본 24). arguments_json은 null.
+- {{type: agent, name: dm_moca}}   한 멤버에게 1:1로 먼저 말을 건다. 그 사람에게만 해당하는 안내나 확인에만 쓴다.
+    spec: instruction(무엇을 알리고 무엇을 확인할지 한 문장), deadline_hours(1~72, 기본 48),
+          target: {{"member": 앱 이름, "program_id": "p_…", "activity_id": "a_…"(선택)}}. arguments_json은 null.
+    하네스가 거절하는 것: 진행 중이 아닌 프로그램, 그 프로그램(또는 활동)의 정모에 신청하지 않은 사람,
+    1:1 동의나 운영 활용 동의가 없는 사람, 안내를 그만 받기로 한 사람, 답을 아직 기다리는 사람.
+    모두에게 같은 내용이라면 1:1이 아니라 모임 채팅이나 게시글로 알린다.
 - {{type: tool, name: list_events}}      정모 목록.               arguments_json: {{}}
 - {{type: tool, name: read_event}}       정모 하나의 상세.         arguments_json: {{"name": …}}
 - {{type: tool, name: write_post}}       게시판에 글 올리기 (정모 안내 글 등). arguments_json: {{"title", "body"}}
@@ -573,6 +579,24 @@ class GoalLoop:
                 return "거절", problem, False, {}
             self.log(f"  모임 채팅 작업 생성: {task['id']} — {spec.get('instruction')} (마감 {task['deadline']})")
             return "시작", f"작업 {task['id']}를 채팅 모카에게 맡김 (마감 {task['deadline']})", False, {"task_id": task["id"]}
+        if executor == direct.DM_MOCA:
+            target = spec.get("target") or {}
+            program_id = target.get("program_id") or goal.get("program_id")
+            if not program_id:
+                return "거절", "1:1 안내는 어떤 프로그램의 것인지(program_id) 밝혀야 합니다", False, {}
+            if self.dry_run:
+                return "실행 안 함(dry-run)", f"1:1 안내: {target.get('member')} — {spec.get('instruction')}", True, {}
+            task, problem = direct.create(target.get("member"), spec.get("instruction"), program_id,
+                                         activity_id=target.get("activity_id"),
+                                         hours=spec.get("deadline_hours") or direct.DEFAULT_HOURS,
+                                         goal_id=goal["id"], created_by=f"goal:{goal['id']}",
+                                         events_ui=self.events_ui)
+            if problem:
+                return "거절", problem, False, {}
+            self.log(f"  1:1 안내 작업 생성: {task['id']} → {target.get('member')} — {spec.get('instruction')} "
+                     f"(마감 {task['deadline']})")
+            return "시작", (f"작업 {task['id']}로 {target.get('member')}님께 1:1 안내를 맡김 "
+                          f"(마감 {task['deadline']}). 아직 보내지 않았으니 전달된 것처럼 말하지 마세요"), False, {"task_id": task["id"]}
         name = executor.get("name")
         if executor.get("type") != "tool" or name not in WRITE_TOOLS + READ_TOOLS + ACTIVITY_TOOLS:
             return "거절", f"없는 실행자입니다: {executor}", False, {}

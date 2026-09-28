@@ -144,6 +144,10 @@ RULES = """
   무엇을 확인할지는 프로그램이 무엇을 필요로 하느냐에 달렸다. 고를 거리가 필요하면 후보 여럿을, 하나를 같이
   보는 자리라면 그 하나가 실제로 쓸 만한지를, 장소나 도구에 제약이 걸리면 그 조건을 확인해라. 투표를 열 때도
   마찬가지다: 선택지가 실제로 존재하고 조건을 확인한 것이어야 한다.
+- 참가 신청을 한 사람에게는 1:1로 먼저 말을 걸 수 있다 (dm_moca 작업). 그 사람에게만 해당하는 것에만 쓴다:
+  맡기로 한 역할, 그 사람이 준비할 것, 그 사람에게만 물어야 하는 확인. 모두에게 같은 안내라면 게시글이나
+  모임 채팅으로 해라 — 같은 말을 사람마다 1:1로 보내는 것은 안내가 아니라 발송이다.
+  신청하지 않은 사람, 동의하지 않은 사람에게는 하네스가 거절한다. 거절은 그 사람에게 말을 걸지 말라는 뜻이다.
 - 소개 글에 담는 것: 무엇을 하는 모임인지, 누구에게 맞는지, 한 회차가 어떻게 진행되는지, 어떻게 참가하는지.
   담지 않는 것: 가설·근거·목표·슬롯 같은 내부 이야기, 아직 정해지지 않은 날짜·장소·발표자. 이건 초대이지
   공지가 아니야. 정해지지 않은 것은 "함께 정해요"라고 쓰면 된다.
@@ -226,7 +230,9 @@ def instructions(program):
 def context(program):
     """The program agent's own world: its program, its activities, and what else is on the calendar."""
     from harness import research
-    lines = [P.line(program), "", A.block(program["id"]), "", research.block(program["id"])]
+    from harness import direct
+    lines = [P.line(program), "", A.block(program["id"]), "", research.block(program["id"]), "",
+             direct.block(program["id"])]
     others = [a for a in A.load() if a["program_id"] != program["id"] and a["status"] in A.OPEN]
     lines += ["", "## 다른 프로그램의 활동 (겹치지 않게 참고만)"] + (
         [f"- {a.get('when') or '시각 미정'} {a['title']} ({a['program_id']})" for a in others] or ["(없음)"])

@@ -143,7 +143,8 @@ def vote_tasks(statuses=OPEN):
 
 def open_tasks():
     """Everything 운영 모카 may still be waiting on."""
-    return group_chat_tasks() + vote_tasks()
+    from harness import direct
+    return group_chat_tasks() + vote_tasks() + direct.direct_tasks()
 
 
 def vote_due():
@@ -239,6 +240,13 @@ def consume(task):
     _log("consumed", task, outcome=result.get("outcome"), summary=result.get("summary"),
          summary_subjects=result.get("summary_subjects", []), knowledge=[k["id"] for k in result.get("knowledge", [])])
     _path(task["id"]).unlink(missing_ok=True)
+
+
+def needs_dm():
+    """Should the loop open a 1:1 for a task? (harness/direct.py owns the rules; this keeps the loop's
+    wake-up check in one place.)"""
+    from harness import direct
+    return direct.needs_dm()
 
 
 def needs_chat():

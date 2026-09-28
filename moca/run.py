@@ -209,6 +209,14 @@ def dm_session(args, chat, dm_agent, members, check_inbox):
                 break
 
 
+def dm_task_session(args, chat, dm_agent):
+    """모카's own 1:1 안내 작업 (harness/direct.py): send the queued one, or read the answer to a sent one.
+    The gate is re-checked inside, against the 정모 attendee list as it stands now."""
+    from chatbot.dm_task import DirectTasks
+    # the 정모 attendee list is the permission, so the session reads it itself rather than trusting a cached one
+    DirectTasks(dm_agent, chat, log, events_ui=SomoimEvents(chat), dry_run=args.dry_run).turn()
+
+
 def tier_notice_session(args, chat):
     """Tier-up messages. The system sends these, not 모카: 모카 neither grants stardust nor announces it.
     Members who have not opened a 1:1 with 모카 are left for later — they hear it on their next turn."""
@@ -318,6 +326,9 @@ def session(args, dev, chat, store, agent, dm_agent, client, work):
     if work["dm"] or work["inbox"]:
         presence.activity("dm", members=sorted(work["dm"]), inbox=work["inbox"])
         dm_session(args, chat, dm_agent, work["dm"], work["inbox"])
+    if work.get("dm_task") or tasks.needs_dm():
+        presence.activity("dm_task")
+        dm_task_session(args, chat, dm_agent)
     if devmail.queued():
         dev_request_session(args, chat)
     if stardust.tier_notices():
@@ -343,7 +354,8 @@ ADMIN_TICK = {"date": None}  # the day 운영 모카 last ran in this process
 
 
 def no_work():
-    return {"chat": False, "post": False, "inbox": False, "dm": set(), "admin": False, "memory": False}
+    return {"chat": False, "post": False, "inbox": False, "dm": set(), "admin": False, "memory": False,
+            "dm_task": False}
 
 
 def everything():
@@ -394,6 +406,8 @@ def wait_for_trigger(args, watcher, chat, last_cycle):
         # a task waiting for its opening question, or past its deadline and waiting for its report
         if not args.dry_run and task_needs_chat() and time.time() - last_cycle >= args.min_gap:
             return "운영 작업", dict(no_work(), chat=True)
+        if not args.dry_run and tasks.needs_dm():
+            return "1:1 안내 작업", dict(no_work(), dm_task=True)
         if admin_due(args):
             return "운영 점검 시각", dict(no_work(), admin=True, daily=True)
         # a goal whose wait is over (its task finished), or that has not taken a step yet
