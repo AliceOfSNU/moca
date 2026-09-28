@@ -98,6 +98,32 @@ def _parts(text, mention=None):
     return [(f"@{mention} " if mention and i == 0 else "") + part for i, part in enumerate(parts)]
 
 
+def whisper(member, text, at=None):
+    """A 귓속말 소모임 itself posts in the 모임 chat, visible to 운영진 only: a sign-up, a cancellation, a 정모
+    deleted, someone leaving. 모카 learns about a 정모 sign-up this way and no other — the attendee list alone
+    changes silently — so a mock that skips these makes the loop blind until its next timer.
+    Worded as the real app words them (data/chat/transcript.jsonl)."""
+    at = at or _now()
+    return _append("chat", {"sender": f"{member}(귓속말)", "mine": False, "text": f"(운영진에게만) {text}",
+                            "time": clock(at), "day": day_label(at), "at": at.strftime("%Y-%m-%d %H:%M:%S")})
+
+
+def attend(event_name, member, joining=True, at=None):
+    """A member presses 참석 (or 취소) on a 정모. Returns (the event, None) or (None, why not)."""
+    state = load()
+    e = next((x for x in state["events"] if x["name"] == event_name), None)
+    if e is None:
+        return None, f"없는 정모입니다: {event_name}"
+    before = list(e["joiners"])
+    e["joiners"] = sorted(set(before) | {member}) if joining else [n for n in before if n != member]
+    if e["joiners"] == before:
+        return e, None  # nothing changed, so the app would say nothing
+    save(state)
+    whisper(member, f"{member}님께서 '{event_name}' 정모에 참석하셨습니다." if joining
+                    else f"{member}님께서 '{event_name}' 정모 참석을 취소하셨습니다.", at=at)
+    return next(x for x in load()["events"] if x["name"] == event_name), None
+
+
 def post_dm(member, sender, text, at=None):
     at = at or _now()
     state = load()
@@ -357,14 +383,8 @@ class MockEvents:
         return True
 
     def set_attendance(self, name, joining=True):
-        state = load()
-        e = next((x for x in state["events"] if x["name"] == name), None)
-        if e is None:
-            return False
-        me = account_name()
-        e["joiners"] = sorted(set(e["joiners"]) | {me}) if joining else [n for n in e["joiners"] if n != me]
-        save(state)
-        return True
+        e, problem = attend(name, account_name(), joining)
+        return e is not None and problem is None
 
     def participants(self, name):
         e = next((x for x in load()["events"] if x["name"] == name), None)

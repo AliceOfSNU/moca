@@ -411,7 +411,18 @@ def mock_action(kind, body):
                 return f"없는 정모입니다: {name}"
             if not who:
                 return "누구로 신청할지 고르세요"
-            e["joiners"] = sorted(set(e["joiners"]) | {who}) if joining else [n for n in e["joiners"] if n != who]
+            before = list(e["joiners"])
+            e["joiners"] = sorted(set(before) | {who}) if joining else [n for n in before if n != who]
+            if e["joiners"] == before:
+                return None  # nothing changed, so the app would say nothing either
+            # 소모임 announces a sign-up as a 귓속말 in the 모임 chat, and that message is the only way 모카
+            # hears about it — the attendee list alone changes silently. Worded as the app words it
+            # (moca: mock/app.py whisper(), which this repeats for the same reason the harness rules are)
+            s["chat"].append({
+                "sender": f"{who}(귓속말)", "mine": False,
+                "text": f"(운영진에게만) {who}님께서 '{name}' 정모에 참석하셨습니다." if joining
+                        else f"(운영진에게만) {who}님께서 '{name}' 정모 참석을 취소하셨습니다.",
+                "time": time_text, "day": day, "at": at})
         return _mock_write(join)
     if kind == "finish":
         task_id = (body.get("task_id") or "").strip()
