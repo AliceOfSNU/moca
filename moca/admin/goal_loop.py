@@ -54,7 +54,7 @@ NEW_KNOWLEDGE_SHOWN = 15 # new knowledge listed in one input; the rest is one kn
 WRITE_TOOLS = ("create_event", "edit_event", "cancel_event", "set_attendance", "open_program_signup",
                "create_vote", "close_vote", "delete_vote", "ask_developer", "write_post", "research")
 PROGRAM_ONLY = ("open_program_signup",)  # 프로그램 담당 모카만, 자기 프로그램에 대해서만
-ACTIVITY_TOOLS = ("draft_activity", "update_activity", "cancel_activity")  # 프로그램 모카만
+ACTIVITY_TOOLS = ("draft_activity", "update_activity", "cancel_activity", "adopt_event")  # 프로그램 모카만
 READ_TOOLS = ("list_events", "read_event", "list_votes", "read_vote")
 
 EXECUTOR_CATALOG = f"""- {{type: agent, name: chat_moca}}  모임 채팅에서 멤버들에게 묻고 답을 모아 결과(요약 + 출처 있는 지식)로 돌려준다.
@@ -75,6 +75,9 @@ EXECUTOR_CATALOG = f"""- {{type: agent, name: chat_moca}}  모임 채팅에서 �
 - {{type: tool, name: update_activity}}  (프로그램 모카만) 활동에 정해진 것을 적는다. arguments_json: {{"activity_id", "slot"?, "value"?, "note"?,
                                                                    "when"?, "location"?, "title"?, "notes"?}}
 - {{type: tool, name: cancel_activity}}  (프로그램 모카만) 기획 중인 활동을 접는다. arguments_json: {{"activity_id", "reason"}}
+- {{type: tool, name: adopt_event}}      (프로그램 모카만) 남이 이미 열어 둔 정모를 이 활동의 정모로 붙인다. arguments_json: {{"activity_id", "event_name"}}
+    로하가 연 정모를 프로그램이 맡아 진행할 때 쓴다. 붙인 뒤에도 그 정모의 이름·시각·장소·취소는 모카가 바꿀 수 없다.
+    참석자 명단이 이 활동의 참가자가 되므로, 그 사람들에게는 dm_moca로 1:1 안내를 보낼 수 있다.
 - {{type: tool, name: open_program_signup}} (프로그램 모카만) 프로그램의 참가 등록 정모를 연다. arguments_json: {{"program_id", "post_title"}}
 - {{type: tool, name: create_event}}     정모 만들기 (활동 하나를 실제 정모로). arguments_json: {{"name", "when": "YYYY-MM-DD HH:MM", "location", "post_title",
                                                                    "activity_id", "capacity"?, "expense"?,

@@ -73,10 +73,18 @@ def event_of(program_id, activity_id=None):
             return None, (f"활동 {activity_id}는 아직 정모로 열리지 않았습니다. 참가자가 정해지기 전에는 1:1로 "
                           "먼저 말을 걸 수 없습니다")
         return a["event"], None
-    if not p.get("container"):
-        return None, (f"프로그램 {program_id}의 참가 등록 정모가 아직 없습니다. 신청한 사람이 없으니 1:1로 먼저 "
-                      "말을 걸 수 없습니다 (open_program_signup)")
-    return p["container"]["event"], None
+    if p.get("container"):
+        return p["container"]["event"], None
+    # a program built around a 정모 someone else opened has no 참가 등록 정모 of its own: the roster is that
+    # gathering's attendee list (harness/activities.py: adopt)
+    scheduled = [a for a in A.for_program(program_id) if a["status"] == "scheduled" and a.get("event")]
+    if len(scheduled) == 1:
+        return scheduled[0]["event"], None
+    if scheduled:
+        return None, (f"프로그램 {program_id}에는 정모가 여러 개 있습니다. 어느 회차의 참가자인지 activity_id로 "
+                      f"밝히세요: {', '.join(a['id'] for a in scheduled)}")
+    return None, (f"프로그램 {program_id}의 참가 등록 정모가 아직 없습니다. 신청한 사람이 없으니 1:1로 먼저 "
+                  "말을 걸 수 없습니다 (open_program_signup, 또는 이미 열린 정모라면 adopt_event)")
 
 
 # --- 신청했는가: 하네스가 읽는다 ---------------------------------------------------------------------

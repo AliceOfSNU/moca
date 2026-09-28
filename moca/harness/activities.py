@@ -200,6 +200,67 @@ def schedule(activity_id, event, when, location):
     return a
 
 
+def check_adoptable(activity_id, event_name):
+    """May this activity attach itself to a 정모 that already exists and someone else opened?
+    Returns ((activity, the 정모's index entry), None) or (None, why not).
+
+    A program is not always built around a 정모 모카 opened. 로하 may open one — with outside people invited
+    through channels 모카 has nothing to do with — and still want the program to run its part: settle how the
+    session goes, tell the people who signed up what to prepare. Without this the program had no way to point
+    at that gathering: it could only open a second 정모 beside it, and the attendee list it needed to write to
+    anyone lived on a 정모 it did not own.
+    """
+    from admin.events import load_index
+    from harness import programs as P
+    a = get(activity_id)
+    if a is None:
+        return None, f"없는 활동입니다: {activity_id}"
+    if a["status"] != "draft":
+        return None, f"{activity_id}는 '{STATUSES[a['status']]}' 상태입니다 (기획 중인 활동만 정모에 붙일 수 있습니다)"
+    p = next((x for x in P.load() if x["id"] == a["program_id"]), None)
+    if p is None or p["status"] not in P.OPEN_FOR_ACTIVITIES:
+        return None, f"활동의 프로그램 {a['program_id']}가 정모를 열 수 있는 상태가 아닙니다"
+    entry = next((e for e in load_index()["events"] if e["name"] == event_name), None)
+    if entry is None:
+        names = [e["name"] for e in load_index()["events"]]
+        return None, f"앱에 그런 정모가 없습니다: '{event_name}'. list_events로 이름을 그대로 확인하세요: {names}"
+    if entry.get("mine"):
+        return None, (f"'{event_name}'은 모카가 만든 정모입니다. 활동의 정모로 붙이는 건 남이 만든 정모에만 "
+                      "필요합니다 (모카가 열 정모는 create_event로 만드세요)")
+    if event_name in P.containers():
+        return None, f"'{event_name}'은 어떤 프로그램의 참가 등록 정모입니다"
+    taken = by_event(event_name)
+    if taken is not None:
+        return None, (f"'{event_name}'은 이미 활동 {taken['id']}"
+                      f"({'같은' if taken['program_id'] == a['program_id'] else '다른'} 프로그램 "
+                      f"{taken['program_id']})의 정모입니다")
+    return (a, entry), None
+
+
+def adopt(activity_id, event_name, log=None):
+    """Attach a draft activity to a 정모 someone else opened. Unlike schedule() this does not require every
+    slot to be settled: the 정모 exists either way, and its time and place were decided by whoever opened it —
+    the program's job is what happens inside it. 모카 does not own this 정모 and cannot edit or cancel it; the
+    harness keeps that true by never marking it as 모카's (admin/events.py: mark_mine)."""
+    from harness import programs as P
+    (a, entry), problem = check_adoptable(activity_id, event_name)
+    if problem:
+        return None, problem
+    records = load()
+    a = get(activity_id, records)
+    a.update(event=event_name, when=entry.get("when"), location=entry.get("location"),
+             status="scheduled", adopted=True, updated_at=_now())
+    a["history"].append({"at": a["updated_at"],
+                         "what": f"이미 열려 있던 정모 '{event_name}'에 붙임 ({entry.get('when')}, "
+                                 f"{entry.get('location')}) — 모카가 만든 정모가 아니라 고치거나 취소할 수 없다"})
+    save(records)
+    P.started(a["program_id"], f"{which(a)}를 이미 열려 있던 정모 '{event_name}'에 붙임")
+    if log:
+        log(f"  활동 {a['id']}를 정모 '{event_name}'에 붙였습니다 ({entry.get('when_text') or entry.get('when')}, "
+            f"신청 {entry.get('joiners')}명) — 모카의 정모가 아니므로 수정·취소는 로하가 합니다")
+    return a, None
+
+
 def cancel(activity_id=None, event=None, reason=None):
     records = load()
     a = get(activity_id, records) if activity_id else by_event(event, records)
@@ -339,6 +400,21 @@ class Tools:
         return (f"update_activity 완료: {activity_id}\n{line(a)}"
                 + (f"\n아직 정할 것: {', '.join(s['name'] for s in left)}" if left else "\n정할 것을 모두 정했습니다"))
 
+    def adopt_event(self, activity_id=None, event_name=None, **_):
+        problem = self._mine(activity_id)
+        if problem:
+            return f"adopt_event 실패: {problem}"
+        if self.dry_run:
+            return f"(dry-run) {activity_id}를 정모 '{event_name}'에 붙이는 요청을 확인했습니다"
+        a, problem = adopt(activity_id, (event_name or "").strip(), self.log)
+        if problem:
+            return f"adopt_event 실패: {problem}"
+        left = unfilled(a)
+        return (f"adopt_event 완료: {activity_id}를 정모 '{a['event']}'에 붙였습니다 ({a['when']}, {a['location']}).\n"
+                f"이 정모는 모카가 만든 게 아니라서 이름·시각·장소·취소는 모카가 바꿀 수 없습니다. 바뀌어야 할 것이 "
+                f"있으면 로하에게 부탁하세요(ask_developer).\n{line(a)}"
+                + (f"\n아직 정할 것: {', '.join(s['name'] for s in left)}" if left else ""))
+
     def cancel_activity(self, activity_id=None, reason=None, **_):
         problem = self._mine(activity_id)
         if problem:
@@ -353,7 +429,7 @@ class Tools:
 
     def handlers(self):
         return {"draft_activity": self.draft_activity, "update_activity": self.update_activity,
-                "cancel_activity": self.cancel_activity}
+                "cancel_activity": self.cancel_activity, "adopt_event": self.adopt_event}
 
 
 def main():
