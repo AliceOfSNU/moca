@@ -744,7 +744,7 @@ function renderMock() {
 }
 
 function bindMock() {
-  const who = (id) => ($("#" + id) || {}).value || ui.mockWho;
+  const who = (id) => (document.getElementById(id) || {}).value || ui.mockWho;
   // what is half-typed or half-chosen belongs to the person, not to the render: keep it
   document.querySelectorAll(".compose textarea").forEach((el) =>
     (el.oninput = () => (ui.mockDraft[el.id] = el.value)));
@@ -759,7 +759,7 @@ function bindMock() {
   document.querySelectorAll("[data-dm]").forEach((el) => (el.onclick = () => {
     const member = el.dataset.dm;
     const id = `f-dm-${member}`;
-    mockPost("dm", { member, text: ($(`#${CSS.escape(id)}`) || {}).value }, id);
+    mockPost("dm", { member, text: (document.getElementById(id) || {}).value }, id);
   }));
   document.querySelectorAll("[data-join], [data-leave]").forEach((el) => (el.onclick = () => {
     const name = el.dataset.join || el.dataset.leave;
@@ -767,7 +767,8 @@ function bindMock() {
   }));
   document.querySelectorAll("[data-cast]").forEach((el) => (el.onclick = () => {
     const title = el.dataset.cast;
-    const options = [...document.querySelectorAll(`[data-vote="${CSS.escape(title)}"]:checked`)].map((b) => b.value);
+    const options = [...document.querySelectorAll("#view [data-vote]")]
+      .filter((b) => b.dataset.vote === title && b.checked).map((b) => b.value);
     mockPost("vote", { title, member: who(`f-vote-who-${title}`), options });
   }));
   document.querySelectorAll("[data-finish]").forEach((el) => (el.onclick = () => mockPost("finish", { task_id: el.dataset.finish })));
@@ -840,7 +841,8 @@ function render(keepScroll = true) {
   else if (route === "flow") renderFlow();
   else renderGoals();
   if (keep) {
-    const el = keep.id ? $("#" + keep.id) : $(`[data-crit="${keep.crit}"]`);
+    const el = keep.id ? document.getElementById(keep.id)
+                       : [...document.querySelectorAll("[data-crit]")].find((n) => n.dataset.crit === keep.crit);
     if (el && !el.disabled) { el.focus(); try { el.setSelectionRange(keep.pos, keep.pos); } catch (_) {} }
   }
   if (scroll) putScroll(scroll); else window.scrollTo(0, 0);
