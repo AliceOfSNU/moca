@@ -748,7 +748,8 @@ function bindMock() {
   // what is half-typed or half-chosen belongs to the person, not to the render: keep it
   document.querySelectorAll(".compose textarea").forEach((el) =>
     (el.oninput = () => (ui.mockDraft[el.id] = el.value)));
-  document.querySelectorAll(".compose select").forEach((el) =>
+  // every member picker, not just the composers': the 정모 and 투표 ones are in .rewrite rows
+  document.querySelectorAll("#view select[id^='f-']").forEach((el) =>
     (el.onchange = () => (ui.mockDraft[el.id] = el.value)));
   const send = $("#f-chat-send");
   if (send) send.onclick = () => {
@@ -846,19 +847,45 @@ function render(keepScroll = true) {
 }
 
 let lastRaw = null;
+let deferred = null;
+
+// An open <select> lives in the browser's own popup, and replacing the element closes it — so a state event
+// arriving while someone is choosing a member would snatch the list away mid-click. Those renders wait.
+const choosing = () => {
+  const el = document.activeElement;
+  return !!el && el.tagName === "SELECT" && !!el.closest("#view");
+};
+
+function flushDeferred() {
+  if (deferred === null || choosing()) return;
+  S = JSON.parse(deferred);
+  deferred = null;
+  render();
+}
+
+function onState(e) {
+  const same = connected && e.data === lastRaw;
+  connected = true;
+  lastRaw = e.data;
+  if (same) return;  // the loop touched a file without changing what this page shows
+  if (choosing()) {  // mid-selection: keep the newest state and draw it once the list closes
+    deferred = e.data;
+    renderHeader();
+    return;
+  }
+  S = JSON.parse(e.data);
+  render();
+}
 
 function connect() {
   const es = new EventSource("/api/stream");
-  es.addEventListener("state", (e) => {
-    const same = connected && e.data === lastRaw;
-    connected = true;
-    lastRaw = e.data;
-    if (same) return;  // the loop touched a file without changing what this page shows
-    S = JSON.parse(e.data);
-    render();
-  });
+  es.addEventListener("state", onState);
   es.onerror = () => { connected = false; if (S) renderHeader(); };
 }
+
+// the list closed (chosen or abandoned): draw whatever arrived while it was open
+document.addEventListener("change", (e) => { if (e.target.tagName === "SELECT") setTimeout(flushDeferred, 0); });
+document.addEventListener("focusout", (e) => { if (e.target.tagName === "SELECT") setTimeout(flushDeferred, 0); });
 
 window.addEventListener("hashchange", () => { ui.formMsg = null; ui.hypoMsg = null; ui.progMsg = null; render(false); });
 fetch("/api/state").then((r) => r.json()).then((s) => { S = s; render(); });
