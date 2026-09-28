@@ -422,7 +422,7 @@ def wait_for_trigger(args, watcher, chat, last_cycle):
             current = chat.preview()
             if baseline and current and current != baseline:
                 log(f"알림 없이 내모임 미리보기가 바뀜: {current[0]!r}")
-                return "미리보기 변경", {"chat": True, "post": False, "inbox": False, "dm": set()}
+                return "미리보기 변경", dict(no_work(), chat=True)
             baseline = baseline or current
             continue
         work = no_work()
@@ -485,7 +485,8 @@ def main():
                               memory=memory_due(args))
     retried = False
     while True:
-        log(f"── 회차 시작 ({reason}: {', '.join(k for k in ('chat', 'post', 'inbox', 'admin', 'memory') if work[k]) or ''}"
+        log(f"── 회차 시작 ({reason}: "
+            f"{', '.join(k for k in ('chat', 'post', 'inbox', 'admin', 'memory', 'dm_task') if work.get(k)) or ''}"
             f"{' dm=' + ','.join(work['dm']) if work['dm'] else ''})")
         cycle_started = time.time()
         chat_read = None
