@@ -53,7 +53,16 @@ def blank():
     return {"members": [], "chat": [], "dms": {}, "posts": [], "events": [], "votes": [], "delivered": 0}
 
 
+_running = False   # set by install(): only a loop run beats the heartbeat, not the CLI
+
+
 def load():
+    if _running:
+        # The real loop's heartbeat hangs off SomoimUI.on_read — every screen it reads (run.py). The mock reads
+        # a file instead, so nothing beat, and the dashboard called a perfectly healthy mock run "stopped".
+        # Reading the mock 모임's state is this world's equivalent of seeing the screen. presence throttles.
+        from harness import presence
+        presence.seen()
     if STATE.exists():
         return {**blank(), **json.loads(STATE.read_text(encoding="utf-8"))}
     return blank()
@@ -502,7 +511,17 @@ def install(log=print):
     every module already loaded, and refuse to run if any real object is still reachable.
     """
     import sys
+    import time as _time
+    global _running
     seed(log=log)
+    # a mock run that has not been watched for days did not sleep for days — start the heartbeat here rather
+    # than let the first beat report a nap that never happened
+    from harness import presence
+    state = presence.load()
+    if state.get("last_seen") and _time.time() - state["last_seen"] > presence.GAP:
+        state["last_seen"] = _time.time()
+        presence.save(state)
+    _running = True
     pairs = _real()
     for module in list(sys.modules.values()):
         ns = getattr(module, "__dict__", None)
