@@ -27,7 +27,8 @@ from chatbot.post_tools import POST_SEARCH_RULES, create_with_post_tools
 from chatbot.store import ChatStore
 from cua.agent import openai_client
 from harness import activities, knowledge
-from harness.tasks import (DEADLINE_HOURS, DEFAULT_HOURS, MAX_GROUP_CHAT_PER_DAY, consume, create_group_chat_task,
+from harness.tasks import (DEADLINE_HOURS, DEFAULT_HOURS, MAX_GROUP_CHAT_PER_DAY, MAX_OPEN_GROUP_CHAT,
+                           consume, create_group_chat_task,
                            finished_group_chat_tasks, group_chat_tasks)
 from cua.android import AndroidDevice
 
@@ -47,7 +48,8 @@ ADMIN_RULES = f"""
 ## 모임 채팅에 물어보기 (ask_group_chat)
 - 정모나 활동을 정하는 데 멤버들의 생각이 필요하면, 채팅 모카에게 모임 채팅에서 알아봐 달라고 맡길 수 있어.
   채팅 모카가 자기 말투로 묻고, 답을 모아 결과를 돌려줘. 결과는 다음 점검 때 '끝난 작업'으로 받아.
-- 한 번에 하나만, 하루 {MAX_GROUP_CHAT_PER_DAY}개까지. 멤버들이 설문 받는 느낌이 들지 않게 꼭 필요할 때만 써.
+- 동시에 {MAX_OPEN_GROUP_CHAT}개까지, 하루 {MAX_GROUP_CHAT_PER_DAY}개까지. 멤버들이 설문 받는 느낌이 들지 않게 꼭 필요할 때만 써.
+  여러 개가 열려 있을 때 무엇을 먼저 물을지는 채팅 모카가 채팅 흐름을 보고 정해.
 - instruction에는 무엇을 알아낼지 구체적으로 한 문장으로 써. (예: "다음 정모에 참여하기 편한 요일과 시간대를 확인하라.")
 - 결과의 멤버 이름은 운영 활용을 허락한 멤버만 보여. 나머지는 '한 멤버'로 보이니 누군지 추측하지 마.
 

@@ -36,7 +36,9 @@ DONE = ("succeeded", "failed")
 CHAT_MOCA = {"type": "agent", "name": "chat_moca"}
 DEADLINE_HOURS = (1, 72)
 DEFAULT_HOURS = 24
-MAX_OPEN_GROUP_CHAT = 1      # one question at a time in the 모임 chat
+MAX_OPEN_GROUP_CHAT = 3      # questions that may be open in the 모임 chat at once (chat 모카 picks which to
+                             # attend to; one question at a time meant a goal could be blocked for days by
+                             # another goal's question)
 MAX_GROUP_CHAT_PER_DAY = 4   # members shouldn't feel surveyed
 MAX_TASK_MESSAGES = 6        # messages 모카 may send the 모임 for one task (opener + follow-ups + thanks)
 FOLLOW_UP_GAP = 20 * 60      # seconds between a task's messages: stops bursts, the budget does the limiting
@@ -86,20 +88,42 @@ def group_chat_tasks(statuses=OPEN):
     return [t for t in all_tasks() if is_group_chat(t) and t["status"] in statuses]
 
 
+def running_group_chat_tasks():
+    return group_chat_tasks(("running",))
+
+
 def running_group_chat_task():
-    return next((t for t in group_chat_tasks(("running",))), None)
+    """The one 모카 is currently attending to — the oldest running question. Kept for the places that only
+    need "is something going on in the chat right now"."""
+    return next(iter(running_group_chat_tasks()), None)
+
+
+def last_chat_message_at():
+    """When 모카 last sent the 모임 a message for any task. Pacing is shared: three open questions must not
+    mean three messages in a row."""
+    times = [t["run"].get("last_message_at") or t["run"].get("started_at")
+             for t in group_chat_tasks() if t["run"].get("last_message_at") or t["run"].get("started_at")]
+    return max(times) if times else None
+
+
+def chat_quiet_enough():
+    last = last_chat_message_at()
+    return not last or (dt.datetime.now() - dt.datetime.strptime(last, FMT)).total_seconds() >= FOLLOW_UP_GAP
 
 
 def deadline_passed(task):
     return time.strftime(FMT) >= task["deadline"]
 
 
-def _created_today():
+def _created_today(channel="group_chat"):
+    """How many tasks of one channel were created today. The channel matters: a vote watcher and a 1:1 안내
+    are also "created", and counting them against the 모임 chat's daily budget silently spent it."""
     if not LOG.exists():
         return 0
     today = time.strftime("%Y-%m-%d")
     return sum(1 for line in LOG.read_text(encoding="utf-8").splitlines()
-               if line.strip() and (e := json.loads(line))["event"] == "created" and e["at"].startswith(today))
+               if line.strip() and (e := json.loads(line))["event"] == "created"
+               and e["at"].startswith(today) and e.get("channel") == channel)
 
 
 def create_group_chat_task(instruction, hours=DEFAULT_HOURS, created_by="admin", goal_id=None):
@@ -115,8 +139,11 @@ def create_group_chat_task(instruction, hours=DEFAULT_HOURS, created_by="admin",
         return None, "deadline_hours는 정수여야 합니다"
     if not DEADLINE_HOURS[0] <= hours <= DEADLINE_HOURS[1]:
         return None, f"deadline_hours는 {DEADLINE_HOURS[0]}~{DEADLINE_HOURS[1]} 사이여야 합니다"
-    if len(group_chat_tasks()) >= MAX_OPEN_GROUP_CHAT:
-        return None, "이미 모임 채팅에서 진행 중인 작업이 있습니다. 그 결과를 받은 뒤에 새로 요청하세요"
+    open_now = group_chat_tasks()
+    if len(open_now) >= MAX_OPEN_GROUP_CHAT:
+        asking = "; ".join(f"{t['id']}: {t['spec']['instruction'][:40]}" for t in open_now)
+        return None, (f"모임 채팅에서 진행 중인 작업이 이미 {len(open_now)}개입니다 (최대 {MAX_OPEN_GROUP_CHAT}). "
+                      f"그중 하나의 결과를 받은 뒤에 새로 요청하세요 — {asking}")
     if _created_today() >= MAX_GROUP_CHAT_PER_DAY:
         return None, f"모임 채팅 작업은 하루 {MAX_GROUP_CHAT_PER_DAY}개까지입니다"
     created = dt.datetime.now()
@@ -126,7 +153,8 @@ def create_group_chat_task(instruction, hours=DEFAULT_HOURS, created_by="admin",
             "created_at": created.strftime(FMT), "deadline": (created + dt.timedelta(hours=hours)).strftime(FMT),
             "run": {}}
     save(task)
-    _log("created", task, created_by=created_by, deadline=task["deadline"], goal_id=goal_id)
+    _log("created", task, created_by=created_by, deadline=task["deadline"], goal_id=goal_id,
+         channel="group_chat")
     return task, None
 
 
@@ -162,7 +190,8 @@ def create_vote_task(title, deadline, goal_id=None, created_by="harness"):
             "status": "running", "result": None, "created_by": created_by, "goal_id": goal_id,
             "created_at": created.strftime(FMT), "deadline": deadline, "run": {"started_at": created.strftime(FMT)}}
     save(task)
-    _log("created", task, created_by=created_by, deadline=deadline, goal_id=goal_id, vote=title)
+    _log("created", task, created_by=created_by, deadline=deadline, goal_id=goal_id, vote=title,
+         channel="vote")
     return task
 
 
@@ -209,11 +238,11 @@ def messages_left(task):
 
 
 def may_follow_up(task):
-    """Is there budget and enough quiet time for another message? One message stays reserved for the thanks."""
+    """Is there budget and enough quiet time for another message? One message stays reserved for the thanks,
+    and the quiet time counts messages sent for any task — the 모임 hears one chat, not three."""
     if not messages_left(task):
         return False
-    last = task["run"].get("last_message_at") or task["run"].get("started_at")
-    return not last or (dt.datetime.now() - dt.datetime.strptime(last, FMT)).total_seconds() >= FOLLOW_UP_GAP
+    return chat_quiet_enough()
 
 
 def checked(task, msg_id):

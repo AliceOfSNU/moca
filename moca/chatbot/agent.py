@@ -248,6 +248,28 @@ class ChatAgent:
         resp = self.client.responses.create(model=self.model, reasoning=self.reasoning, instructions=system_prompt(), input=prompt)
         return plain_text(resp.output_text)
 
+    def task_pick(self, choices, history):
+        """Which open question deserves attention right now. `choices`: [{"key", "what", "state"}] — the
+        harness decides what is allowed and does the mandatory things itself; this is the judgement call it
+        cannot make, which of several conversations the 모임 needs moved along next.
+        Returns (key or "", why)."""
+        keys = [c["key"] for c in choices] + [""]
+        schema = {"type": "object", "additionalProperties": False, "required": ["choice", "reason"],
+                  "properties": {"choice": {"type": "string", "enum": keys}, "reason": {"type": "string"}}}
+        listing = "\n".join(f"- {c['key']}\n    알아볼 것: {c['what']}\n    지금 상태: {c['state']}" for c in choices)
+        data = self._task_json(
+            "## 최근 채팅 기록 (오래된 순)\n" + "\n".join(format_line(m) for m in history)
+            + f"\n\n## 모임 운영을 위해 지금 채팅에서 알아보는 중인 것들\n{listing}\n\n"
+              "지금 이 순간 모임 채팅에서 하나만 움직일 수 있어. 어느 것을 움직일지 골라.\n"
+              "- 순서대로 처리하는 게 아니야. 지금 대화 흐름에 자연스럽게 얹을 수 있는 것, 마감이 가까운 것, "
+              "답이 모자란 것을 먼저 봐.\n"
+              "- 사람들이 방금 다른 이야기로 즐겁게 대화 중이면 끼어들지 않는 게 나을 수도 있어. "
+              "그럴 때는 choice를 빈 문자열로 둬.\n"
+              "- 이미 물어본 것을 또 묻지 마. 한 번에 여러 가지를 묻지도 마.\n"
+              "reason은 왜 그걸 골랐는지 한 문장.",
+            "task_pick", schema)
+        return data["choice"], data["reason"].strip()
+
     def task_open(self, instruction, history):
         """The message that asks the 모임 what 운영 needs to know."""
         return self._task_text(

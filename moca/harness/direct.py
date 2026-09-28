@@ -252,7 +252,7 @@ def create(member, instruction, program_id, activity_id=None, hours=DEFAULT_HOUR
             "deadline": (created + dt.timedelta(hours=hours)).strftime(T.FMT), "run": {}}
     T.save(task)
     T._log("created", task, created_by=created_by, deadline=task["deadline"], goal_id=goal_id,
-           member=member, program_id=program_id, activity_id=activity_id)
+           member=member, program_id=program_id, activity_id=activity_id, channel="direct")
     return task, None
 
 
