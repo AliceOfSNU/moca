@@ -17,10 +17,13 @@ What the fakes keep faithful, because the harness depends on it: the shapes the 
 with "2명 참석중 (2/60)", vote cards with "3명 참여 • 미참여"), 모카's own account name, and the message keys the
 read position is built from. What they don't model: scrolling, keyboards, photos, notifications from the OS.
 """
+import argparse
 import contextlib
 import datetime as dt
 import json
 import os
+import pathlib
+import shutil
 import sys
 import time
 
@@ -260,8 +263,17 @@ class MockBoard:
     list_posts = list_cards
 
     def read_post(self, card, category="전체"):
-        title = card["title"] if isinstance(card, dict) else card
-        p = next((x for x in load()["posts"] if x["title"] == title), None)
+        posts = load()["posts"]
+        if isinstance(card, dict):
+            # a title does not identify a post — every 가입인사 shares one. The author and the posting time do,
+            # which is what chatbot/posts.py matches on too.
+            p = next((x for x in posts if x["title"] == card["title"] and x["author"] == card.get("author")
+                      and x["time"] == card.get("time")), None)
+            if p is None:
+                p = next((x for x in posts if x["title"] == card["title"]
+                          and x["author"] == card.get("author")), None)
+        else:
+            p = next((x for x in posts if x["title"] == card), None)
         if p is None:
             return None
         return {"title": p["title"], "author": p["author"], "role": p.get("role", ""), "time": p["time"],
@@ -513,9 +525,73 @@ def install(log=print):
     log(f"목업 소모임으로 실행합니다 ({STATE})")
 
 
+def _card_time(iso):
+    """'2026-09-17 19:38' -> '2026년 9월 17일 오후 7:38', the shape a board card shows and chatbot/posts.py
+    parses back to exactly the same minute."""
+    at = dt.datetime.strptime(iso, "%Y-%m-%d %H:%M")
+    return f"{at.year}년 {at.month}월 {at.day}일 {clock(at)}"
+
+
+def clone_real(real=None, log=print):
+    """Fill the mock 모임 with the real one's 게시판 and 모임 채팅 as they stand now.
+
+    A test 모카 that has never seen the group it is testing reasons about strangers. But copying only the
+    *records* across would not work: the mock board would still be empty, so the next full sync would decide
+    every saved post had been deleted and forget it, facts and all. So all three have to agree — what the mock
+    screens show, what 모카 has saved, and where it stopped reading. Posts are rebuilt from the saved entries
+    (same titles, same bodies, a card time that parses back to the same minute), so a sync finds nothing
+    changed; the transcript and read position are copied, so the 290 messages already there don't arrive as
+    new ones 모카 feels it must answer.
+
+    1:1 대화, 정모, 투표 are left alone: the real ones belong to real people, and a test that opens a 정모 or
+    answers a 1:1 should start from what the test itself set up.
+    """
+    from chatbot import posts as P
+    real = pathlib.Path(real) if real else DATA_ROOT.parent / "data"
+    if real.resolve() == DATA_ROOT.resolve():
+        raise RuntimeError(f"목업 데이터 폴더와 같은 곳입니다: {real} — MOCA_DATA=data-mock 로 실행하세요")
+
+    index = json.loads((real / "board" / "index.json").read_text(encoding="utf-8"))
+    entries = sorted(index["posts"], key=lambda e: e["time"])
+    posts = []
+    for e in entries:
+        body = (real / "board" / e["path"]).read_text(encoding="utf-8").split("\n\n", 2)[-1].strip()
+        posts.append({"category": e["category"], "title": e["title"], "body": body, "author": e["author"],
+                      "role": e.get("role") or "", "pinned": e.get("pinned", False),
+                      "time": _card_time(e["time"]), "at": e["time"] + ":00"})
+
+    chat = []
+    lines = (real / "chat" / "transcript.jsonl").read_text(encoding="utf-8").splitlines()
+    for line in lines:
+        if not line.strip():
+            continue
+        m = json.loads(line)
+        chat.append({"sender": m["sender"], "mine": m.get("mine", False), "text": m["text"],
+                     "time": m["time"], "day": m.get("day"), "at": m.get("read_at") or ""})
+
+    state = load()
+    state["posts"], state["chat"] = posts, chat
+    save(state)
+
+    # the records and the read position, so none of this looks new or deleted
+    board = DATA_ROOT / "board"
+    shutil.rmtree(board, ignore_errors=True)
+    shutil.copytree(real / "board", board)
+    (DATA_ROOT / "chat").mkdir(parents=True, exist_ok=True)
+    for name in ("transcript.jsonl", "state.json"):
+        shutil.copyfile(real / "chat" / name, DATA_ROOT / "chat" / name)
+    log(f"진짜 모임에서 복제: 게시글 {len(posts)}개, 채팅 {len(chat)}개 ({real} → {DATA_ROOT})")
+    return state
+
+
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
-    state = seed()
+    ap = argparse.ArgumentParser(description="목업 소모임의 상태를 보거나, 진짜 모임의 게시판·채팅을 복제합니다")
+    ap.add_argument("--clone-real", action="store_true",
+                    help="진짜 모임(data/)의 게시글과 모임 채팅을 목업 모임으로 가져온다 (1:1·정모·투표는 그대로)")
+    ap.add_argument("--real", default=None, help="복제해 올 데이터 폴더 (기본: data)")
+    args = ap.parse_args()
+    state = clone_real(args.real) if args.clone_real else seed()
     print(json.dumps({k: (len(v) if isinstance(v, (list, dict)) else v) for k, v in state.items()},
                      ensure_ascii=False, indent=1))
 
