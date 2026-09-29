@@ -170,9 +170,10 @@ def vote_tasks(statuses=OPEN):
 
 
 def open_tasks():
-    """Everything 운영 모카 may still be waiting on."""
-    from harness import direct
-    return group_chat_tasks() + vote_tasks() + direct.direct_tasks()
+    """Everything 운영 모카 may still be waiting on. A goal's wait is refused unless the task it names is in
+    here, so a channel missing from this list is a channel nobody can wait for."""
+    from harness import direct, program_task
+    return group_chat_tasks() + vote_tasks() + direct.direct_tasks() + program_task.program_tasks()
 
 
 def vote_due():

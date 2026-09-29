@@ -31,6 +31,13 @@ def goal_id_for(program_id):
     return f"g_{program_id}"
 
 
+def top_goal_id(program_id):
+    """The goal that stands for a whole program, for the programs spawned before requests existed (their agent
+    was born holding one). New programs have none: every goal they get is a job 운영 모카 asked for."""
+    p = next((x for x in P.load() if x["id"] == program_id), None)
+    return (p.get("agent") or {}).get("goal_id") if p else None
+
+
 def top_goal(p):
     """The agent's top goal, written from the program: objective and how we would know it is done."""
     title, purpose = P.show(p, p["title"]), P.show(p, p["purpose"])
@@ -51,21 +58,23 @@ def top_goal(p):
 
 
 def spawn(program, log=None):
-    """Give a program its agent: one top goal carrying program_id. Returns the goal, or None if it has one."""
-    goal_id = goal_id_for(program["id"])
-    if G.get(G.load(), goal_id):
-        return None
-    objective, criteria = top_goal(program)
-    goal = G.add(goal_id, objective, criteria, created_by=f"harness(program:{program['id']})",
-                 program_id=program["id"])
+    """Give a program an agent — and nothing to do yet. Returns the program, or None if it already has one.
+
+    The agent starts with an empty goal tree. A goal appears when 운영 모카 hands it a deliverable
+    (harness/program_task.py), so the brief is authored by whoever asked rather than derived from the record, and
+    an agent with no request has no goal for focus() to pick: it waits without costing a round. top_goal() stays
+    as what the program as a whole is for — the words 운영 모카 reads when deciding what to ask of it."""
     records = P.load()
     p = next(x for x in records if x["id"] == program["id"])
-    p["agent"] = {"goal_id": goal_id, "since": time.strftime("%Y-%m-%d %H:%M:%S")}
+    if p.get("agent"):
+        return None
+    p["agent"] = {"goal_id": None, "since": time.strftime("%Y-%m-%d %H:%M:%S")}
     p["updated_at"] = p["agent"]["since"]
     P.save(records)
     if log:
-        log(f"  프로그램 담당 에이전트 생성: {goal_id} ({P.show(p, p['title'])})")
-    return goal
+        log(f"  프로그램 담당 모카 생성: {p['id']} ({P.show(p, p['title'])}) — 아직 맡은 일이 없다. "
+            f"운영 모카가 start_task(program_moca)로 한 가지를 맡길 수 있다")
+    return p
 
 
 def teardown(program_id, status, reason, log=None):
@@ -84,6 +93,8 @@ def teardown(program_id, status, reason, log=None):
     G.save(goals)
     for a in A.for_program(program_id, statuses=("draft",)):
         A.cancel(a["id"], reason=f"프로그램 {P.STATUSES[status]}")
+    from harness import program_task
+    program_task.close_open(program_id, f"프로그램이 {P.STATUSES[status]}", log)
     if log:
         log(f"  프로그램 {program_id} {P.STATUSES[status]} → 목표 {len(closed)}개 닫음, 기획 중이던 활동 정리")
     return p, None
@@ -144,6 +155,9 @@ RULES = """
   무엇을 확인할지는 프로그램이 무엇을 필요로 하느냐에 달렸다. 고를 거리가 필요하면 후보 여럿을, 하나를 같이
   보는 자리라면 그 하나가 실제로 쓸 만한지를, 장소나 도구에 제약이 걸리면 그 조건을 확인해라. 투표를 열 때도
   마찬가지다: 선택지가 실제로 존재하고 조건을 확인한 것이어야 한다.
+- 네 목표는 운영 모카가 맡긴 일이다. 하나씩 온다. 그 목표를 마치면(propose_goal_outcome) 결과가 운영 모카에게
+  돌아가니, 무엇을 해냈고 무엇이 아직 아닌지(limitations) 분명히 적어라 — 그게 다음에 무엇을 맡길지 정한다.
+  맡은 일의 범위를 넘어 프로그램 전체를 혼자 진행하지 마라. 프로그램을 끝내거나 그만두는 것도 운영 모카가 정한다.
 - 프로그램이 이미 열려 있는 정모를 맡아 진행하는 경우도 있다. 로하가 정모를 열고 (때로는 우리 모임 밖의
   사람까지 모아) 진행은 프로그램에 맡기는 식이다. 그럴 때는 새 정모를 따로 열지 마라 — 활동을 기획한 뒤
   adopt_event로 그 정모에 붙여라. 그때부터 그 정모의 참석자가 이 활동의 참가자다.

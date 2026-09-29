@@ -43,7 +43,7 @@ from chatbot.post_tools import create_with_post_tools
 from admin import program_agent
 from harness import activities as A
 from harness import goals as G
-from harness import devmail, direct, evidence, hypotheses, knowledge, planner, programs, research, sources, tasks
+from harness import devmail, direct, evidence, hypotheses, knowledge, planner, program_task, programs, research, sources, tasks
 
 MODEL = "gpt-6-sol"
 MAX_STEPS = 4            # steps per wake-up
@@ -52,13 +52,21 @@ MAX_FOCUS_SWITCHES = 8   # goals handled in one round (a subgoal finishing hands
 MAX_MODIFY = 2           # modify_goals steps per wake-up (they don't count towards MAX_STEPS)
 NEW_KNOWLEDGE_SHOWN = 15 # new knowledge listed in one input; the rest is one knowledge_search away
 WRITE_TOOLS = ("create_event", "edit_event", "cancel_event", "set_attendance", "open_program_signup",
-               "create_vote", "close_vote", "delete_vote", "ask_developer", "write_post", "research")
+               "create_vote", "close_vote", "delete_vote", "ask_developer", "write_post", "research",
+               "finish_program")
 PROGRAM_ONLY = ("open_program_signup",)  # 프로그램 담당 모카만, 자기 프로그램에 대해서만
+ADMIN_ONLY = ("finish_program",)         # 운영 모카만 (어떤 프로그램이 존재하는지는 운영 모카가 정한다)
 ACTIVITY_TOOLS = ("draft_activity", "update_activity", "cancel_activity", "adopt_event")  # 프로그램 모카만
 READ_TOOLS = ("list_events", "read_event", "list_votes", "read_vote")
 
 EXECUTOR_CATALOG = f"""- {{type: agent, name: chat_moca}}  모임 채팅에서 멤버들에게 묻고 답을 모아 결과(요약 + 출처 있는 지식)로 돌려준다.
     spec: instruction("무엇을 알아낼지" 한 문장), deadline_hours(1~72, 기본 24). arguments_json은 null.
+- {{type: agent, name: program_moca}} (운영 모카만) 프로그램 담당 모카에게 한 가지 일을 맡기고 그 결과를 기다린다.
+    spec: instruction(무엇을 해내야 하는지 한 문장), completion_criteria(무엇을 보면 끝났다고 할지, 1~4개),
+          deadline_hours(1~72, 기본 24), target: {{"program_id": "p_…"}}. arguments_json은 null.
+    맡기면 담당 모카의 목표가 되고, 담당 모카가 그 목표를 마치면 결과(해냄/여기까지 + 한계)가 돌아온다.
+    한 프로그램에 한 번에 하나만. 프로그램 전체를 맡기지 말고 한 번에 해낼 수 있는 하나를 맡겨라
+    (예: "첫 회차의 발표자와 진행 방식을 확정해라", "확정된 첫 회차를 정모로 열어라").
 - {{type: agent, name: dm_moca}}   한 멤버에게 1:1로 먼저 말을 건다. 그 사람에게만 해당하는 안내나 확인에만 쓴다.
     spec: instruction(무엇을 알리고 무엇을 확인할지 한 문장), deadline_hours(1~72, 기본 48),
           target: {{"member": 앱 이름, "program_id": "p_…", "activity_id": "a_…"(선택)}}. arguments_json은 null.
@@ -79,6 +87,8 @@ EXECUTOR_CATALOG = f"""- {{type: agent, name: chat_moca}}  모임 채팅에서 �
     로하가 연 정모를 프로그램이 맡아 진행할 때 쓴다. 붙인 뒤에도 그 정모의 이름·시각·장소·취소는 모카가 바꿀 수 없다.
     참석자 명단이 이 활동의 참가자가 되므로, 그 사람들에게는 dm_moca로 1:1 안내를 보낼 수 있다.
 - {{type: tool, name: open_program_signup}} (프로그램 모카만) 프로그램의 참가 등록 정모를 연다. arguments_json: {{"program_id", "post_title"}}
+- {{type: tool, name: finish_program}}   (운영 모카만) 프로그램을 끝낸다. arguments_json: {{"program_id", "status": "finished"|"dropped", "reason"}}
+    finished는 목적을 이뤘을 때, dropped는 그만둘 때. 담당 모카의 목표와 기획 중이던 활동도 함께 정리된다.
 - {{type: tool, name: create_event}}     정모 만들기 (활동 하나를 실제 정모로). arguments_json: {{"name", "when": "YYYY-MM-DD HH:MM", "location", "post_title",
                                                                    "activity_id", "capacity"?, "expense"?,
                                                                    "purpose", "mode": "offline"|"online"|"hybrid", "topic",
@@ -473,7 +483,8 @@ class GoalLoop:
                   "## 지금 잡혀 있는 정모", EventTools(self.events_ui, self.log).list_events(),
                   "", "## 진행 중인 투표", open_block(), "", composition_block(), ""]
         program = program_agent.program_of(goal)
-        lines += [program_agent.context(program)] if program else [hypotheses.block(), "", programs.block()]
+        lines += ([program_agent.context(program)] if program
+                  else [hypotheses.block(), "", programs.block(), "", program_task.block()])
         lines += ["", devmail.block(goal),
                   "", "다음 step 하나를 골라."]
         return "\n".join(lines)
@@ -561,12 +572,18 @@ class GoalLoop:
         if not self.dry_run:
             G.update(focus_id, status=status, wait=None, finished_at=tasks.now(),
                      outcome={"summary": outcome["summary"], "limitations": outcome.get("limitations", [])})
-            if goal.get("program_id") and goal.get("parent_id") is None:
-                # the agent's own top goal: the program is over, and the agent goes with it
-                program_agent.teardown(goal["program_id"], "finished" if status == "achieved" else "dropped",
-                                       outcome["summary"], self.log)
-                return "수락", (f"목표 {focus_id}를 {status}로 마치고 프로그램 {goal['program_id']}를 "
-                              f"{'끝냈습니다' if status == 'achieved' else '그만뒀습니다'}"), True, {}
+            if goal.get("program_id"):
+                # a goal 운영 모카 asked for: finishing it answers the request, and the program carries on
+                task = program_task.finish_from_outcome(goal, status, outcome, self.log)
+                if task is not None:
+                    return "수락", (f"목표 {focus_id}를 {status}로 마치고 맡긴 일 {task['id']}의 결과를 "
+                                  f"운영 모카에게 돌려줬습니다"), True, {}
+                if goal.get("parent_id") is None and program_agent.top_goal_id(goal["program_id"]) == focus_id:
+                    # the agent's own top goal (a program from before this channel existed): the program ends
+                    program_agent.teardown(goal["program_id"], "finished" if status == "achieved" else "dropped",
+                                           outcome["summary"], self.log)
+                    return "수락", (f"목표 {focus_id}를 {status}로 마치고 프로그램 {goal['program_id']}를 "
+                                  f"{'끝냈습니다' if status == 'achieved' else '그만뒀습니다'}"), True, {}
         return "수락", f"목표 {focus_id}를 {status}로 마침", True, {}
 
     def _start_task(self, goal, spec):
@@ -582,6 +599,20 @@ class GoalLoop:
                 return "거절", problem, False, {}
             self.log(f"  모임 채팅 작업 생성: {task['id']} — {spec.get('instruction')} (마감 {task['deadline']})")
             return "시작", f"작업 {task['id']}를 채팅 모카에게 맡김 (마감 {task['deadline']})", False, {"task_id": task["id"]}
+        if executor == program_task.PROGRAM_MOCA:
+            if goal.get("program_id"):
+                return "거절", "프로그램 담당 모카는 다른 담당 모카에게 일을 맡길 수 없습니다", False, {}
+            target = spec.get("target") or {}
+            if self.dry_run:
+                return "실행 안 함(dry-run)", f"프로그램 작업: {target.get('program_id')} — {spec.get('instruction')}", True, {}
+            task, problem = program_task.create(
+                target.get("program_id"), spec.get("instruction"), spec.get("completion_criteria") or spec.get("criteria"),
+                hours=spec.get("deadline_hours") or program_task.DEFAULT_HOURS,
+                goal_id=goal["id"], created_by=f"goal:{goal['id']}", log=self.log)
+            if problem:
+                return "거절", problem, False, {}
+            return "시작", (f"작업 {task['id']}로 프로그램 {target.get('program_id')}의 담당 모카에게 맡김 "
+                          f"(목표 {task['spec']['target']['goal_id']}, 마감 {task['deadline']})"), False, {"task_id": task["id"]}
         if executor == direct.DM_MOCA:
             target = spec.get("target") or {}
             program_id = target.get("program_id") or goal.get("program_id")
@@ -615,6 +646,10 @@ class GoalLoop:
         agent = f"goal:{goal['id']}"
         if name in ACTIVITY_TOOLS:
             tools = A.Tools(goal["program_id"], log=self.log, dry_run=self.dry_run)
+        elif name == "finish_program":
+            if goal.get("program_id"):
+                return "거절", "프로그램을 끝내는 것은 운영 모카가 정합니다", False, {}
+            tools = program_task.Tools(log=self.log, dry_run=self.dry_run)
         elif name == "research":
             tools = research.Tools(goal.get("program_id"), log=self.log, dry_run=self.dry_run)
         elif name == "write_post":
