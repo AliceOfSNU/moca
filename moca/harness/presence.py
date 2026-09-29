@@ -13,6 +13,7 @@ Usage (from the moca/ directory):
 """
 import datetime as dt
 import json
+import os
 import sys
 import time
 
@@ -58,12 +59,26 @@ def seen(now=None, log=None):
 
 def activity(kind, **detail):
     """Record what the loop is doing right now — "idle", "chat", "dm", "post", "memory" or "goal" — for the
-    dashboard (a separate program that only reads data/). Written on every change, so it is always current."""
+    dashboard (a separate program that only reads data/). Written on every change, so it is always current.
+
+    On Windows the replace fails while another process has the file open, and the dashboard reads this one on
+    every refresh. A status line is not worth a crash — and this one killed the loop, from the one call that
+    sits outside the round's try. So: a tmp name of our own, a few retries, then give up quietly."""
     STATUS.parent.mkdir(parents=True, exist_ok=True)
-    tmp = STATUS.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"activity": kind, "since": time.strftime("%Y-%m-%d %H:%M:%S"), "detail": detail},
-                              ensure_ascii=False), encoding="utf-8")
-    tmp.replace(STATUS)
+    tmp = STATUS.with_name(f"{STATUS.stem}.{os.getpid()}.tmp")
+    text = json.dumps({"activity": kind, "since": time.strftime("%Y-%m-%d %H:%M:%S"), "detail": detail},
+                      ensure_ascii=False)
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        for attempt in range(5):
+            try:
+                tmp.replace(STATUS)
+                return
+            except OSError:
+                time.sleep(0.1 * (attempt + 1))
+        tmp.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def _when(ts, today=None):
