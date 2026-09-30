@@ -201,7 +201,10 @@ def dm_session(args, chat, dm_agent, members, check_inbox):
             last = ChatStore(member_dir(row["member"])).history(1)
             if not last or last[-1]["text"] != row["preview"]:
                 members.append(row["member"])
+    from harness import dm_optout
     for member in dict.fromkeys(members):
+        if dm_optout.is_off(member):
+            continue  # they asked to stop: their conversation is not opened at all
         dm = DirectChat(chat, member, log=log)
         # like the 모임 chat, an open conversation gets no notifications: keep reading until nothing is new
         for _ in range(3):

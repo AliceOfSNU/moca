@@ -299,6 +299,11 @@ def converse(dm, agent, log, dry_run=False, open_profile=None):
     if not dm.open(open_profile):
         log(f"{dm.member}님과의 1:1 대화를 열 수 없음")
         return False
+    from harness import dm_optout
+    if dm_optout.is_off(dm.member):
+        # they asked to stop: no notice, no reply, nothing read (harness/dm_optout.py)
+        log(f"{dm.member}님은 1:1 서비스를 그만두셨습니다 — 열지 않고 넘어갑니다")
+        return False
     status = consent_gate(dm, agent, log, dry_run=dry_run)
     if status != "agreed":
         return status == "sent"
@@ -318,6 +323,16 @@ def converse(dm, agent, log, dry_run=False, open_profile=None):
     unanswered = [m for m in msgs if not m["mine"] and not store.answered(m)]
     if not msgs or msgs[-1]["mine"] or not unanswered:
         return False
+    if any(dm_optout.asked(m["text"]) for m in unanswered):
+        # the member asked to stop. Say goodbye first, then forget — the confirmation is the last message
+        # they get, and it has to go out before the transcript it would be written into is gone.
+        log(f"{dm.member}님이 1:1 서비스 중단을 요청함")
+        if dry_run:
+            return False
+        sent = dm.send(dm_optout.GOODBYE)
+        log("  " + ("작별 인사 전송 완료" if sent else "작별 인사 전송 실패 (그래도 기록은 지웁니다)"))
+        dm_optout.forget(dm.member, by="본인", log=log)
+        return bool(sent)
     issues = [c for m in unanswered if (c := devmail.parse_command(m["text"]))] if dm.member == DEVELOPER else []
     if issues:
         # 로하's answer to 모카's request #n: the harness records it for 운영 모카 and confirms; no model reads it

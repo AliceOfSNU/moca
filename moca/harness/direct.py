@@ -195,6 +195,11 @@ def check(member, program_id, activity_id=None, events_ui=None, ignore=None):
     event_name, problem = event_of(program_id, activity_id)
     if problem:
         return None, problem
+    from harness import dm_optout
+    if dm_optout.is_off(member):
+        # not "has not consented yet" — they asked to stop. Saying it the other way invites trying again.
+        return None, (f"{member}님은 1:1 서비스를 그만두셨습니다. 1:1로는 어떤 것도 보낼 수 없습니다. "
+                      "모임 채팅이나 게시글로 알리세요")
     if not has_consented(member):
         return None, (f"{member}님은 1:1 메시지 안내에 아직 동의하지 않았습니다. 동의 전에는 모카가 먼저 말을 걸 수 "
                       "없습니다. 모임 채팅에서 물어보세요")
