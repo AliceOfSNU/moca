@@ -102,7 +102,10 @@ EXECUTOR_CATALOG = f"""- {{type: agent, name: chat_moca}}  모임 채팅에서 �
 - {{type: tool, name: create_vote}}      투표 올리기.             arguments_json: {{"title", "options": [...], "ends_at"?: "YYYY-MM-DD HH:MM", "multi"?, "anonymous"?}}
 - {{type: tool, name: close_vote}}       모카가 올린 투표 종료.    arguments_json: {{"title": …}}
 - {{type: tool, name: delete_vote}}      모카가 올린 투표 삭제.    arguments_json: {{"title", "reason"}}
-- {{type: tool, name: ask_developer}}    개발자 로하에게 하네스 변경을 1:1로 요청. arguments_json: {{"text", "kind": "feature"|"limit"|"bug"|"question", "why"?}}"""
+- {{type: tool, name: ask_developer}}    개발자 로하에게 하네스 변경을 1:1로 요청. arguments_json: {{"text", "kind": "feature"|"limit"|"bug"|"question", "why"?}}
+    하네스·구현에 대한 것만 보낸다 — 네가 할 수 없는 일, 막힌 기능, 이상 동작. 모임에 대한 사실(장소와 시설,
+    일정, 누가 무엇을 하기로 했는지)은 개발자 요청이 아니라 그걸 아는 멤버에게 묻는다. 로하가 그 답을 아는
+    사람이라면 로하에게도 멤버로서 물어라 (dm_moca). 로하가 개발자인 것과 모임장인 것은 다른 일이다."""
 
 GOAL_RULES = f"""
 
