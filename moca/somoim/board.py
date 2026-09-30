@@ -207,11 +207,18 @@ class SomoimBoard:
         for _ in range(6):
             root = self.ui.dump()
             title_box, editor = first_id(root, "title_edit"), self._editor(root)
-            if title_box is not None or editor is None:
+            if editor is None:
+                if title_box is None:
+                    return root, None, None   # not the write screen at all
+                # the body is a WebView (소모임's rich editor): the title box is there a beat before it is,
+                # and returning here handed back "no editor" and gave up on a screen that was about to be fine
+                time.sleep(1.2)
+                continue
+            if title_box is not None:
                 return root, title_box, editor
             self.ui.swipe(self.dev.width // 2, 500, 2000, 300)
             time.sleep(0.8)
-        return root, None, editor
+        return root, title_box, editor
 
     def _clear_form(self):
         """Empty both fields. The app autosaves drafts and restores them the next time 작성 is opened."""
