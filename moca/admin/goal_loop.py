@@ -62,14 +62,14 @@ READ_TOOLS = ("list_events", "read_event", "list_votes", "read_vote")
 EXECUTOR_CATALOG = f"""- {{type: agent, name: chat_moca}}  모임 채팅에서 멤버들에게 묻고 답을 모아 결과(요약 + 출처 있는 지식)로 돌려준다.
     spec: instruction("무엇을 알아낼지" 한 문장), deadline_hours(1~72, 기본 24). arguments_json은 null.
 - {{type: agent, name: program_moca}} (운영 모카만) 프로그램 담당 모카에게 한 가지 일을 맡기고 그 결과를 기다린다.
-    spec: instruction(무엇을 해내야 하는지 한 문장), completion_criteria(무엇을 보면 끝났다고 할지, 1~4개),
-          deadline_hours(1~72, 기본 24), target: {{"program_id": "p_…"}}. arguments_json은 null.
+    spec: instruction(무엇을 해내야 하는지 한 문장), deadline_hours(1~72, 기본 24),
+          arguments_json: {{"program_id": "p_…", "completion_criteria": ["무엇을 보면 끝났다고 할지", …1~4개]}}
     맡기면 담당 모카의 목표가 되고, 담당 모카가 그 목표를 마치면 결과(해냄/여기까지 + 한계)가 돌아온다.
     한 프로그램에 한 번에 하나만. 프로그램 전체를 맡기지 말고 한 번에 해낼 수 있는 하나를 맡겨라
     (예: "첫 회차의 발표자와 진행 방식을 확정해라", "확정된 첫 회차를 정모로 열어라").
 - {{type: agent, name: dm_moca}}   한 멤버에게 1:1로 먼저 말을 건다. 그 사람에게만 해당하는 안내나 확인에만 쓴다.
     spec: instruction(무엇을 알리고 무엇을 확인할지 한 문장), deadline_hours(1~72, 기본 48),
-          target: {{"member": 앱 이름, "program_id": "p_…", "activity_id": "a_…"(선택)}}. arguments_json은 null.
+          arguments_json: {{"member": 앱 이름, "program_id": "p_…", "activity_id": "a_…"(선택)}}
     하네스가 거절하는 것: 진행 중이 아닌 프로그램, 그 프로그램(또는 활동)의 정모에 신청하지 않은 사람,
     1:1 동의나 운영 활용 동의가 없는 사람, 안내를 그만 받기로 한 사람, 답을 아직 기다리는 사람.
     모두에게 같은 내용이라면 1:1이 아니라 모임 채팅이나 게시글로 알린다.
@@ -586,6 +586,19 @@ class GoalLoop:
                                   f"{'끝냈습니다' if status == 'achieved' else '그만뒀습니다'}"), True, {}
         return "수락", f"목표 {focus_id}를 {status}로 마침", True, {}
 
+    @staticmethod
+    def _spec_args(spec):
+        """An agent executor's extra fields travel in arguments_json, the way a tool's do — the step schema is
+        closed, so anything not named there cannot reach us."""
+        raw = (spec.get("arguments_json") or "").strip()
+        if not raw:
+            return {}, None
+        try:
+            args = json.loads(raw)
+        except json.JSONDecodeError as e:
+            return None, f"arguments_json이 올바른 JSON이 아닙니다: {e}"
+        return (args, None) if isinstance(args, dict) else (None, "arguments_json은 객체여야 합니다")
+
     def _start_task(self, goal, spec):
         if not spec:
             return "거절", "start_task에는 spec이 필요합니다", False, {}
@@ -602,19 +615,24 @@ class GoalLoop:
         if executor == program_task.PROGRAM_MOCA:
             if goal.get("program_id"):
                 return "거절", "프로그램 담당 모카는 다른 담당 모카에게 일을 맡길 수 없습니다", False, {}
-            target = spec.get("target") or {}
+            args, problem = self._spec_args(spec)
+            if problem:
+                return "거절", problem, False, {}
             if self.dry_run:
-                return "실행 안 함(dry-run)", f"프로그램 작업: {target.get('program_id')} — {spec.get('instruction')}", True, {}
+                return "실행 안 함(dry-run)", f"프로그램 작업: {args.get('program_id')} — {spec.get('instruction')}", True, {}
             task, problem = program_task.create(
-                target.get("program_id"), spec.get("instruction"), spec.get("completion_criteria") or spec.get("criteria"),
+                args.get("program_id"), spec.get("instruction") or args.get("instruction"),
+                args.get("completion_criteria"),
                 hours=spec.get("deadline_hours") or program_task.DEFAULT_HOURS,
                 goal_id=goal["id"], created_by=f"goal:{goal['id']}", log=self.log)
             if problem:
                 return "거절", problem, False, {}
-            return "시작", (f"작업 {task['id']}로 프로그램 {target.get('program_id')}의 담당 모카에게 맡김 "
+            return "시작", (f"작업 {task['id']}로 프로그램 {args.get('program_id')}의 담당 모카에게 맡김 "
                           f"(목표 {task['spec']['target']['goal_id']}, 마감 {task['deadline']})"), False, {"task_id": task["id"]}
         if executor == direct.DM_MOCA:
-            target = spec.get("target") or {}
+            target, problem = self._spec_args(spec)
+            if problem:
+                return "거절", problem, False, {}
             program_id = target.get("program_id") or goal.get("program_id")
             if not program_id:
                 return "거절", "1:1 안내는 어떤 프로그램의 것인지(program_id) 밝혀야 합니다", False, {}
