@@ -137,7 +137,11 @@ class EventTools:
         event = find_event(name)
         if event is None:
             return f"'{name}' 정모를 찾을 수 없습니다. list_events로 이름을 확인하세요."
-        return json.dumps({**event, "plan": get_plan(name)}, ensure_ascii=False)
+        # who signed up, by name. Until now this said only how many, so "누가 오는지"의 답은 모카에게 없었고
+        # 아는 길은 멤버들에게 묻는 것뿐이었다 — 명단을 보면 되는 것을 모임 채팅에 물었다.
+        # 참석 버튼은 모임 멤버만 누를 수 있으니(외부 참석자는 다른 길로 신청한다) 이 명단은 우리 멤버다.
+        joiners = self.ui.participants(name) if self.ui is not None else None
+        return json.dumps({**event, "joiner_names": joiners, "plan": get_plan(name)}, ensure_ascii=False)
 
     # writing -------------------------------------------------------------------
     def create_event(self, name=None, when=None, location=None, capacity=20, expense=0, post_title=None,

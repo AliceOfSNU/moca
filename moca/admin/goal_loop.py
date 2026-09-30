@@ -74,7 +74,8 @@ EXECUTOR_CATALOG = f"""- {{type: agent, name: chat_moca}}  모임 채팅에서 �
     1:1 동의나 운영 활용 동의가 없는 사람, 안내를 그만 받기로 한 사람, 답을 아직 기다리는 사람.
     모두에게 같은 내용이라면 1:1이 아니라 모임 채팅이나 게시글로 알린다.
 - {{type: tool, name: list_events}}      정모 목록.               arguments_json: {{}}
-- {{type: tool, name: read_event}}       정모 하나의 상세.         arguments_json: {{"name": …}}
+- {{type: tool, name: read_event}}       정모 하나의 상세와 참석 신청한 멤버 이름(joiner_names). arguments_json: {{"name": …}}
+    누가 오는지 알아야 할 때는 멤버들에게 묻지 말고 이걸로 명단을 봐라.
 - {{type: tool, name: write_post}}       게시판에 글 올리기 (정모 안내 글 등). arguments_json: {{"title", "body"}}
 - {{type: tool, name: research}}         웹에서 사실을 확인한다 — 고를 후보, 예시 하나, 조건, 사실. arguments_json: {{"question", "activity_id"?}}
     question은 {research.QUESTION_LIMIT}자 이내. 길면 거절된다 — 알아볼 것 하나만 짧게 적고 형식 요구는 빼라.
