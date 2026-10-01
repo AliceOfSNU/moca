@@ -194,3 +194,9 @@ form label.check { display: flex; gap: 8px; align-items: baseline; font-weight: 
 .s-canceled { background: var(--red-bg); color: var(--red); }
 .cites li.mine { color: var(--blue); }
 .checks .check span.muted { margin-left: 4px; }
+
+/* panel heading with a toggle on the right (최상위 목표: 끝난 목표 숨기기) */
+.panel h2.h2-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.panel h2 label.h2-toggle { display: flex; align-items: baseline; gap: 6px; font-weight: 400; text-transform: none;
+  letter-spacing: 0; cursor: pointer; white-space: nowrap; }
+.panel h2 label.h2-toggle input { margin: 0; cursor: pointer; }

@@ -4,7 +4,7 @@
 
 let S = null;                 // latest state from the server
 let connected = false;
-const ui = { selectedNode: {}, openItems: new Set(), knowledgeDesc: true, formDraft: null, formMsg: null, planNotes: {}, planMsg: null, mockWho: null, mockMsg: null, mockDraft: {} };
+const ui = { selectedNode: {}, openItems: new Set(), knowledgeDesc: true, formDraft: null, formMsg: null, planNotes: {}, planMsg: null, mockWho: null, mockMsg: null, mockDraft: {}, hideFinishedGoals: false };
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -92,7 +92,10 @@ function renderGoals() {
   ui.formDraft = draft;
   const blocked = !S.can_add_goal;
   const active = roots.find((g) => !FINISHED.includes(g.status));
-  const list = roots.map((g) => {
+  // 끝난 목표는 지우지 않고 남겨 두므로 목록이 대부분 지난 목표가 된다. 보기에서만 접어 둘 수 있게 한다.
+  const finished = roots.filter((g) => FINISHED.includes(g.status)).length;
+  const shown = ui.hideFinishedGoals ? roots.filter((g) => !FINISHED.includes(g.status)) : roots;
+  const list = shown.map((g) => {
     const ids = subtreeIds(g.id).slice(1);
     const done = ids.filter((id) => FINISHED.includes(goalsById()[id].status)).length;
     const st = displayStatus(g);
@@ -102,7 +105,9 @@ function renderGoals() {
       ${ids.length ? `<div class="bar"><span style="width:${(100 * done / ids.length).toFixed(0)}%"></span></div>` : ""}
       ${g.outcome ? `<div class="muted" style="margin-top:6px;font-size:12px"><b>결과</b> ${esc(g.outcome.summary)}</div>` : ""}
     </a>`;
-  }).join("") || `<p class="empty">아직 목표가 없습니다. 왼쪽에서 첫 목표를 만들어 보세요.</p>`;
+  }).join("") || (roots.length
+    ? `<p class="empty">진행 중인 최상위 목표가 없습니다. 끝난 목표 ${finished}개는 접혀 있습니다.</p>`
+    : `<p class="empty">아직 목표가 없습니다. 왼쪽에서 첫 목표를 만들어 보세요.</p>`);
 
   $("#view").innerHTML = `<div class="grid">
     <div class="panel">
@@ -126,8 +131,14 @@ function renderGoals() {
       </form>
       ${jsonBox("미리보기 (goals.json에 들어갈 모양)", previewGoal(draft))}
     </div>
-    <div class="panel"><h2>최상위 목표 (${roots.length})</h2>${list}</div>
+    <div class="panel">
+      <h2 class="h2-row">최상위 목표 (${ui.hideFinishedGoals && finished ? `${shown.length}/${roots.length}` : roots.length})
+        ${finished ? `<label class="h2-toggle"><input type="checkbox" id="g-hide-finished" ${ui.hideFinishedGoals ? "checked" : ""}> 끝난 목표 숨기기 (${finished})</label>` : ""}
+      </h2>${list}
+    </div>
   </div>`;
+  const hide = document.getElementById("g-hide-finished");
+  if (hide) hide.onchange = () => { ui.hideFinishedGoals = hide.checked; render(); };
   bindForm();
 }
 
