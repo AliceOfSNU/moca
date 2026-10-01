@@ -1,0 +1,13 @@
+[Unit]
+Description=x11vnc on the virtual display, localhost only (reach it through an SSH tunnel)
+After=moca-xvfb.service
+Requires=moca-xvfb.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/x11vnc -display :1 -localhost -rfbport 5900 -forever -shared -nopw -quiet
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

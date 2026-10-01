@@ -1,0 +1,17 @@
+[Unit]
+Description=moca Android emulator (headless)
+After=network-online.target moca-xvfb.service
+Requires=moca-xvfb.service
+
+[Service]
+Type=simple
+Environment=ANDROID_SDK_ROOT=/opt/android
+Environment=ANDROID_AVD_HOME=/root/.android/avd
+Environment=HOME=/root
+Environment=DISPLAY=:1
+ExecStart=/opt/android/emulator/emulator -avd moca34 -no-audio -no-boot-anim -gpu swiftshader_indirect
+Restart=always
+RestartSec=20
+
+[Install]
+WantedBy=multi-user.target

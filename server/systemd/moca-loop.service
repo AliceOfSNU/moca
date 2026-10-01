@@ -1,0 +1,19 @@
+[Unit]
+Description=moca loop (the agent)
+After=moca-emulator.service
+Requires=moca-emulator.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/moca/moca
+Environment=PYTHONIOENCODING=utf-8
+Environment=ANDROID_SDK_ROOT=/opt/android
+Environment=HOME=/root
+Environment=PATH=/opt/android/platform-tools:/usr/local/bin:/usr/bin:/bin
+ExecStartPre=/opt/moca/wait-for-boot.sh
+ExecStart=/opt/moca/.venv/bin/python run.py
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

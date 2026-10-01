@@ -1,0 +1,12 @@
+[Unit]
+Description=virtual display for the emulator (so we can look at the screen)
+Before=moca-emulator.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/Xvfb :1 -screen 0 1200x2560x24 -nolisten tcp
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

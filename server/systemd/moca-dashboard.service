@@ -1,0 +1,14 @@
+[Unit]
+Description=moca dashboard (localhost only, reach it through an SSH tunnel)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/moca
+Environment=PYTHONIOENCODING=utf-8
+ExecStart=/opt/moca/.venv/bin/python -m dashboard
+Restart=always
+RestartSec=20
+
+[Install]
+WantedBy=multi-user.target
