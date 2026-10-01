@@ -181,6 +181,14 @@ def consent_gate(dm, agent, log, dry_run=False, post=None):
     now = time.strftime("%Y-%m-%d %H:%M:%S")
     notice, reminder = gate_texts()
     batch = _messages_after_gate(dm, notice, reminder)
+    if batch is None and record.get("notice_at"):
+        # The notice did go out — the harness wrote down when — but it is not on this screen. 소모임 keeps a 1:1
+        # conversation on the device that sent it, so after a move to another machine the thread starts blank.
+        # Trust our own record over the screen: judging by the screen alone, the gate would send the notice again
+        # on every round and would never see the '네' the member already typed.
+        batch, _ = dm.read_since([], backlog=40)
+        log(f"{dm.member}님: 보낸 1:1 안내가 이 기기 화면에 없음 → 발송 기록({record['notice_at']})을 믿고 "
+            "최근 대화에서 답을 찾습니다")
 
     if batch is None:  # a new conversation, or one from before the consent gate existed
         sent = dm.send(notice, dry_run=dry_run)
@@ -309,6 +317,10 @@ def converse(dm, agent, log, dry_run=False, open_profile=None):
         return status == "sent"
     store = ChatStore(member_dir(dm.member))
     msgs, found = dm.read_since(store.anchor, backlog=40)
+    if store.anchor and not found:
+        # the read position is gone from the screen (a device move, or the app dropped old history). Everything
+        # still on screen counts as new; store.answered() below is what keeps an old message from being answered twice.
+        log(f"  지난번 읽은 위치를 화면에서 찾지 못함 (화면에 남은 {len(msgs)}개를 새 메시지로 봅니다)")
     for m in msgs:
         if m.get("_crop"):
             m["photo_desc"] = agent.describe_photo(m.pop("_crop"))
