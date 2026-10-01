@@ -108,7 +108,8 @@ class DirectTasks:
         member = target["member"]
         store = ChatStore(member_dir(member))
         window = [m for m in store.since(task["run"]["start_msg_id"]) if not m.get("mine")]
-        stop = next((m for m in window if direct.asked_to_stop(m["text"])), None)
+        fresh = direct.replies_since_check(task)   # what arrived since the last look
+        stop = next((m for m in fresh if direct.asked_to_stop(m["text"])), None)
         if stop is not None:
             direct.set_optout(member, how="1:1 답장")
             self.log(f"{member}님이 1:1 운영 안내를 그만 받기로 했습니다 → 앞으로 보내지 않습니다")
@@ -117,19 +118,21 @@ class DirectTasks:
                                        "모임 채팅이나 게시글로만 알릴 수 있습니다.",
                             "summary_subjects": [member], "knowledge": []}, how="early")
             return False
+        due = T.deadline_passed(task)
+        if not fresh and not due:
+            return False              # nothing new to read, and there is still time
         if not window:
-            if T.deadline_passed(task):
-                self.log(f"1:1 안내 마감 ({member}): 답 없음")
-                T.finish(task, {"outcome": "no_shareable_answer",
-                                "summary": f"{member}님께 1:1로 안내했지만 마감까지 답이 없었습니다.",
-                                "summary_subjects": [member], "knowledge": []}, how="deadline")
+            self.log(f"1:1 안내 마감 ({member}): 답 없음")
+            T.finish(task, {"outcome": "no_shareable_answer",
+                            "summary": f"{member}님께 1:1로 안내했지만 마감까지 답이 없었습니다.",
+                            "summary_subjects": [member], "knowledge": []}, how="deadline")
             return False
         answered, reason, summary = check_reply(self.agent, member, task["spec"]["instruction"],
                                                task["run"]["opener"], window)
         self.log(f"1:1 안내 확인 ({member}): {'마무리' if answered else '계속 기다림'} ({reason})")
         if not self.dry_run:
             T.checked(task, window[-1]["id"])
-        if not answered and not T.deadline_passed(task):
+        if not answered and not due:
             return False
         if self.dry_run:
             return False

@@ -167,10 +167,31 @@ def written_for(member, program_id, activity_id=None):
     return out
 
 
+def _num(msg_id):
+    tail = str(msg_id or "")[1:]
+    return int(tail) if tail.isdigit() else 0
+
+
+def replies_since_check(task):
+    """What this member has said since the task was last looked at. A running 안내 is worth re-reading only
+    when there is something new — and without this the loop never looked at all, so an answered 안내 sat
+    until its deadline and then reported that nobody had answered."""
+    from chatbot.dm import member_dir
+    from chatbot.store import ChatStore
+    run = task.get("run") or {}
+    start = run.get("start_msg_id")
+    if not start:
+        return []
+    checked = run.get("checked_msg_id") or start
+    store = ChatStore(member_dir(task["spec"]["target"]["member"]))
+    return [m for m in store.since(start) if not m.get("mine") and _num(m["id"]) > _num(checked)]
+
+
 def needs_dm():
-    """Should the loop open a 1:1 for a task? A queued one waits to be sent, a running one past its deadline
-    waits for its report."""
-    return any(t["status"] == "queued" or T.deadline_passed(t) for t in direct_tasks())
+    """Should the loop open a 1:1 for a task? A queued one waits to be sent, one past its deadline waits for
+    its report, and a running one waits for the reply it may already have."""
+    return any(t["status"] == "queued" or T.deadline_passed(t) or replies_since_check(t)
+               for t in direct_tasks())
 
 
 def check(member, program_id, activity_id=None, events_ui=None, ignore=None):
