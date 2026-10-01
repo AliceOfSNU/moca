@@ -8,7 +8,25 @@ import time
 
 from PIL import Image
 
-ADB = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Android", "Sdk", "platform-tools", "adb.exe")
+def _adb_path():
+    """Where adb lives. The SDK's own adb comes before whatever is on PATH: scrcpy and other tools ship their
+    own, and two adb versions fight over the server (one kills the other's daemon mid-session)."""
+    import shutil
+    if os.environ.get("MOCA_ADB"):
+        return os.environ["MOCA_ADB"]
+    sdk = os.environ.get("ANDROID_SDK_ROOT") or os.environ.get("ANDROID_HOME")
+    roots = [sdk] if sdk else []
+    roots.append(os.path.join(os.environ.get("LOCALAPPDATA", ""), "Android", "Sdk"))
+    for root in roots:
+        for name in ("adb", "adb.exe"):
+            candidate = os.path.join(root, "platform-tools", name)
+            if os.path.exists(candidate):
+                return candidate
+    return shutil.which("adb") or os.path.join(os.environ.get("LOCALAPPDATA", ""), "Android", "Sdk",
+                                               "platform-tools", "adb.exe")
+
+
+ADB = _adb_path()
 ADB_IME = "com.android.adbkeyboard/.AdbIME"
 
 # computer-use key names -> Android keycodes
