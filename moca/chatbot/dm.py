@@ -317,7 +317,7 @@ def converse(dm, agent, log, dry_run=False, open_profile=None):
         return status == "sent"
     store = ChatStore(member_dir(dm.member))
     msgs, found = dm.read_since(store.anchor, backlog=40)
-    if store.anchor and not found:
+    if store.anchor and not found and msgs:
         # the read position is gone from the screen (a device move, or the app dropped old history). Everything
         # still on screen counts as new; store.answered() below is what keeps an old message from being answered twice.
         log(f"  지난번 읽은 위치를 화면에서 찾지 못함 (화면에 남은 {len(msgs)}개를 새 메시지로 봅니다)")
