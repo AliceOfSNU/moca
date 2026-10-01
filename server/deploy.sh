@@ -21,6 +21,18 @@ before=$(git rev-parse --short HEAD)
 git merge --ff-only origin/main
 after=$(git rev-parse --short HEAD)
 
+# 서비스 파일이나 이 스크립트 자신이 바뀌었으면, 복사해 넣는 것은 사람이 해야 한다.
+# 받아올 것이 없던 회차에도 알려 준다 — 지난번에 놓쳤으면 한 번 지나가고 다시 보이지 않는다.
+if ! cmp -s server/deploy.sh /opt/moca/deploy.sh; then
+  echo "알림: server/deploy.sh 가 바뀌었습니다 → cp server/deploy.sh /opt/moca/deploy.sh"
+fi
+for u in server/systemd/*.service; do
+  n=$(basename "$u")
+  if ! cmp -s "$u" "/etc/systemd/system/$n"; then
+    echo "알림: $n 이 바뀌었습니다 → cp $u /etc/systemd/system/ && systemctl daemon-reload"
+  fi
+done
+
 if [ "$before" = "$after" ]; then
   echo "이미 최신입니다 ($after)"
   exit 0
@@ -31,14 +43,3 @@ git --no-pager log --oneline "$before..$after"
 systemctl restart moca-loop
 sleep 4
 systemctl is-active moca-loop
-
-# 서비스 파일이나 이 스크립트 자신이 바뀌었으면, 복사해 넣는 것은 사람이 해야 한다.
-if ! cmp -s server/deploy.sh /opt/moca/deploy.sh; then
-  echo "알림: server/deploy.sh 가 바뀌었습니다 → cp server/deploy.sh /opt/moca/deploy.sh"
-fi
-for u in server/systemd/*.service; do
-  n=$(basename "$u")
-  if ! cmp -s "$u" "/etc/systemd/system/$n"; then
-    echo "알림: $n 이 바뀌었습니다 → cp $u /etc/systemd/system/ && systemctl daemon-reload"
-  fi
-done
