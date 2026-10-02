@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>체크인 · 에이전트 커피챗</title>
+<meta name="description" content="10월 3일 에이전트 커피챗 체크인. 한 번에 한 가지만 물어요. 5분이면 충분합니다.">
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="checkin.css">
+</head>
+<body class="is-form">
+
+<canvas id="stars" aria-hidden="true"></canvas>
+<div class="orbs" aria-hidden="true">
+  <span class="orbit o1" data-depth="0.10"></span>
+  <span class="orbit o3" data-depth="0.13"></span>
+  <span class="orb fill c-purple" style="--size:150px; --top:12%; --right:-60px" data-depth="0.26"></span>
+  <span class="orb ring c-green"  style="--size:120px; --top:34%; --left:-48px"  data-depth="0.22"></span>
+  <span class="orb fill c-blue"   style="--size:70px;  --top:58%; --left:6%"     data-depth="0.44"></span>
+  <span class="orb ring c-purple" style="--size:160px; --top:76%; --right:-54px" data-depth="0.30"></span>
+</div>
+
+<header class="form-top">
+  <div class="wrap form-top-row">
+    <a class="back" href="/">← 안내 페이지</a>
+    <p class="form-mark"><span class="w-white">Agent</span> <span class="w-green">Coffee</span> <span class="w-purple">Chat</span></p>
+  </div>
+</header>
+
+<main class="wrap form-wrap">
+
+  <div class="progress" id="progress" hidden>
+    <div class="progress-bar"><span id="progress-fill"></span></div>
+    <p class="progress-text" id="progress-text"></p>
+  </div>
+
+  <!-- 화면은 JS가 하나씩 보여준다. 모든 질문은 여기에 있다. -->
+  <section class="card" id="card">
+    <div class="step" data-step="intro">
+      <h1 class="q">체크인</h1>
+      <p class="q-sub">10월 3일 토요일 11:00–13:00 · 강남 공튜디오</p>
+      <p class="help">
+        한 번에 한 가지만 물어요. <b>다 답하는 데 5분이면 충분합니다.</b><br>
+        <span class="dim">10/3(토) 오전 10시까지 작성해 주세요.</span>
+      </p>
+      <p class="q-label">먼저, 어느 쪽으로 오시나요?</p>
+      <div class="choices">
+        <button type="button" class="choice" data-role="speaker">
+          <b>발표할게요</b>
+          <span>만든 에이전트를 소개하고 고민을 나눠요. 8분 정도.</span>
+        </button>
+        <button type="button" class="choice" data-role="listener">
+          <b>듣기만 할게요</b>
+          <span>발표를 듣고 질문해요. 준비할 건 없어요.</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <div class="nav" id="nav" hidden>
+    <button type="button" class="btn-ghost" id="prev">이전</button>
+    <button type="button" class="btn-go" id="next">다음</button>
+  </div>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <p class="foot-meta dim">문의는 모임 채팅에서 모카에게 물어봐 주세요.</p>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+<script src="checkin.js"></script>
+</body>
+</html>

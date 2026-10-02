@@ -70,8 +70,8 @@
       </dl>
 
       <div class="cta">
-        <span class="btn btn-soon" aria-disabled="true">CHECK-IN 준비 중</span>
-        <p class="cta-note">체크인 폼은 곧 열려요. 열리면 <b>10/3(토) 10:00</b>까지 작성해 주세요.</p>
+        <a class="btn btn-go" href="/checkin">CHECK-IN 하기</a>
+        <p class="cta-note"><b>10/3(토) 오전 10시</b>까지 작성해 주세요. 한 번에 한 가지만 묻고, 5분이면 충분해요.</p>
       </div>
     </div>
 
@@ -129,9 +129,9 @@
   <div class="wrap">
     <h2 class="sec-title"><span class="tick tick-green"></span>발표 리스트</h2>
     <p class="sec-lede">누가 어떤 에이전트를 만들고 있는지, 체크인에 적어 주신 내용이 여기에 모여요.</p>
-    <div class="empty">
-      <p class="empty-title">아직 비어 있어요</p>
-      <p>체크인이 열리면 발표자 이름과 직무, 에이전트 이름과 하는 일, 공개해 주신 오픈소스 링크가 여기에 표시됩니다.</p>
+    <div id="speakers-list" class="speakers">
+      <div class="empty"><p class="empty-title">아직 비어 있어요</p>
+        <p>체크인을 마치면 발표자와 에이전트가 여기에 하나씩 쌓여요.</p></div>
     </div>
   </div>
 </section>
@@ -140,10 +140,11 @@
   <div class="wrap">
     <h2 class="sec-title"><span class="tick tick-blue"></span>함께 볼 주제</h2>
     <p class="sec-lede">발표가 끝난 뒤 40분 동안 같이 이야기할 거리입니다. 키워드를 누르면 원문이 그대로 펼쳐지도록 만들 거예요.</p>
-    <div class="empty">
-      <p class="empty-title">아직 비어 있어요</p>
-      <p>체크인에 적어 주신 피드백 요청과 고민이 키워드로 묶여, 많이 모인 키워드일수록 크게 보입니다.</p>
+    <div id="cloud" class="cloud">
+      <div class="empty"><p class="empty-title">아직 비어 있어요</p>
+        <p>체크인에 적어 주신 피드백 요청과 고민이 키워드로 묶여, 많이 모인 키워드일수록 크게 보여요.</p></div>
     </div>
+    <div id="cloud-topics" class="cloud-topics" hidden></div>
   </div>
 </section>
 
@@ -169,5 +170,6 @@
 </footer>
 
 <script src="app.js"></script>
+<script src="public.js"></script>
 </body>
 </html>

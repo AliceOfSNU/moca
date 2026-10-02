@@ -1,0 +1,95 @@
+/* 체크인 폼 — 안내 페이지와 같은 색, 한 화면에 한 질문. */
+
+.form-top { position: relative; z-index: 2; padding: 22px 0; border-bottom: 1px solid var(--line); }
+.form-top-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.back { color: var(--dim); text-decoration: none; font-size: 14px; }
+.back:hover { color: var(--ink); }
+.form-mark { margin: 0; font-weight: 800; font-size: 15px; letter-spacing: -.01em; }
+
+.form-wrap { position: relative; z-index: 2; max-width: 620px; padding: clamp(28px, 6vw, 56px) 0 80px; }
+
+/* 어디까지 왔는지 */
+.progress { margin-bottom: 22px; }
+.progress-bar { height: 2px; background: #1b1b20; border-radius: 2px; overflow: hidden; }
+.progress-bar span { display: block; height: 100%; background: var(--green); transition: width .3s ease; }
+.progress-text { margin: 8px 0 0; font-size: 12px; color: var(--dim); letter-spacing: .08em; }
+
+.card {
+  border: 1px solid var(--line); border-radius: 18px; background: var(--panel);
+  padding: clamp(26px, 5vw, 40px);
+}
+
+/* 공개인지 아닌지를 묻는 자리에서 */
+.vis {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  margin: 0 0 20px; font-size: 13px; color: #8e8e98;
+}
+.vis-tag {
+  padding: 3px 10px; border-radius: 999px; font-weight: 700; font-size: 11.5px;
+  letter-spacing: .04em; white-space: nowrap;
+}
+.vis-public  .vis-tag { color: var(--green);  border: 1px solid rgba(0, 197, 95, .45); }
+.vis-private .vis-tag { color: var(--dim);    border: 1px solid #2c2c34; }
+
+.q { margin: 0; font-size: clamp(22px, 3.6vw, 29px); font-weight: 700; letter-spacing: -.022em; line-height: 1.35; }
+.q-sub { margin: 10px 0 0; color: #a4a4ad; font-size: 15px; }
+.q-label {
+  margin: 24px 0 10px; font-size: 11.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim);
+}
+.help { margin: 18px 0 0; font-size: 14.5px; color: #8e8e98; line-height: 1.65; }
+.help b { color: #cfcfd6; font-weight: 600; }
+
+.field { display: block; margin-top: 12px; }
+.field-label { display: block; margin-bottom: 7px; font-size: 12.5px; color: var(--dim); }
+.field input {
+  width: 100%; padding: 14px 16px; font: inherit; font-size: 16px;  /* 16px 미만이면 iOS가 확대한다 */
+  color: var(--ink); background: #0c0c10; border: 1px solid #26262e; border-radius: 11px;
+  transition: border-color .18s;
+}
+.field input::placeholder { color: #55555f; }
+.field input:focus { outline: none; border-color: var(--green); }
+
+.choices { display: grid; gap: 10px; margin-top: 6px; }
+.choice {
+  display: block; width: 100%; text-align: left; cursor: pointer; font: inherit;
+  padding: 18px 20px; border-radius: 13px; border: 1px solid #26262e; background: #0c0c10; color: var(--ink);
+  transition: border-color .18s, background .18s;
+}
+.choice:hover { border-color: #3a3a46; background: #101016; }
+.choice.on { border-color: var(--green); background: rgba(0, 197, 95, .08); }
+.choice b { display: block; font-size: 16.5px; font-weight: 700; }
+.choice span { display: block; margin-top: 5px; font-size: 13.5px; color: #8e8e98; }
+
+.err { margin: 14px 0 0; font-size: 14px; color: #ff8080; }
+
+.nav { display: flex; gap: 10px; justify-content: space-between; margin-top: 20px; }
+.btn-go, .btn-ghost {
+  font: inherit; font-size: 15px; font-weight: 700; cursor: pointer;
+  padding: 14px 26px; border-radius: 999px; text-decoration: none; display: inline-block;
+}
+.btn-go { background: var(--green); color: #00150a; border: 1px solid var(--green); }
+.btn-go:hover { filter: brightness(1.08); }
+.btn-go:disabled { opacity: .6; cursor: default; }
+.btn-ghost { background: transparent; color: var(--dim); border: 1px solid #26262e; }
+.btn-ghost:hover { color: var(--ink); border-color: #3a3a46; }
+
+/* 끝 화면 */
+.done-mark {
+  margin: 0 0 14px; width: 44px; height: 44px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 22px; font-weight: 700;
+  color: var(--green); border: 1px solid rgba(0, 197, 95, .5);
+}
+.venue { margin: 26px 0 0; padding: 22px; border: 1px solid var(--line); border-radius: 14px; background: #0a0a0e; }
+.venue p { margin: 0 0 8px; font-size: 15px; }
+.venue-when b, .venue-where b { font-size: 17px; }
+.venue-addr { color: #a4a4ad; font-size: 14px; line-height: 1.9; }
+.map { margin-top: 14px; border-radius: 11px; overflow: hidden; border: 1px solid var(--line); }
+.map iframe { display: block; width: 100%; height: 240px; border: 0; filter: invert(.92) hue-rotate(180deg); }
+
+.form-wrap .btn-go { margin-top: 24px; }
+
+@media (max-width: 560px) {
+  .nav { position: sticky; bottom: 0; padding: 14px 0; background: linear-gradient(to top, #000 70%, transparent); }
+  .btn-go, .btn-ghost { padding: 15px 22px; }
+  .map iframe { height: 200px; }
+}

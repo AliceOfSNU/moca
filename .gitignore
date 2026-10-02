@@ -29,3 +29,6 @@ venv/
 .idea/
 .DS_Store
 Thumbs.db
+
+# 체크인 제출 (이름·직무 등 개인정보). 깃에 들어가지 않는다.
+site-data/
