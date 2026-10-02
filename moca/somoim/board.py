@@ -272,7 +272,10 @@ class SomoimBoard:
         self._tap_done(root)
         for _ in range(5):
             time.sleep(2.5)
-            if title in [n.get("text") for n in by_id(self.ui.dump(), "title_text")]:
+            # 올린 뒤 돌아오는 곳은 글 목록이고, 목록은 30자쯤에서 제목을 말줄임표 없이 잘라 보여준다.
+            # 그래서 긴 제목은 글이 올라갔어도 같은 글자로는 영영 만나지 못한다 (titles_match).
+            # 여기서 False를 돌려주면 모카는 글이 안 올라간 줄 알고 같은 글을 또 쓴다.
+            if any(titles_match(n.get("text"), title) for n in by_id(self.ui.dump(), "title_text")):
                 return True
         self.log("게시 확인 실패: 게시판에서 새 글 제목을 찾지 못함")
         return False
