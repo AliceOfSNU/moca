@@ -1,0 +1,271 @@
+/* 에이전트 커피챗 — banner.png에서 가져온 색만 쓴다: 검정 바탕에 흰색, 초록, 보라, 파랑. */
+:root {
+  --bg: #000000;
+  --ink: #ffffff;
+  --dim: #8b8b93;
+  --line: #1b1b20;
+  --panel: #07070a;
+  --green: #00c55f;
+  --purple: #9652fa;
+  --blue: #006afe;
+  --wrap: 1120px;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  position: relative;      /* .orbs가 문서 전체 높이를 기준으로 잡히게 한다 */
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+               "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
+  font-size: 17px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+.wrap { width: min(var(--wrap), 100% - 32px); margin-inline: auto; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+.dim { color: var(--dim); }
+
+/* --- 배경: 별, 궤도, 색깔 원 ------------------------------------------------------------------ */
+#stars {
+  position: fixed; inset: 0; width: 100%; height: 100%;
+  z-index: 0; pointer-events: none;
+}
+
+/* 문서 전체 높이에 걸쳐야 하므로 body를 기준 삼는다. inset:0만 두면 기준이 뷰포트라
+   첫 화면 아래의 원들이 전부 잘려 나간다. */
+.orbs { position: absolute; inset: 0; z-index: 1; pointer-events: none; --orb-scale: 1; }
+
+.orb {
+  position: absolute; display: block; border-radius: 50%;
+  /* 크기는 인라인 --size로 오지만 인라인 값은 미디어 쿼리로 못 덮는다.
+     그래서 물려받는 --orb-scale을 곱해 좁은 화면에서 한꺼번에 줄인다. */
+  width: calc(var(--size) * var(--orb-scale)); height: calc(var(--size) * var(--orb-scale));
+  top: var(--top); left: var(--left, auto); right: var(--right, auto);
+  will-change: transform;
+}
+
+/* 색은 color로 받아서 채움과 테두리가 같은 변수를 쓰게 한다 */
+.c-purple { color: var(--purple); }
+.c-green  { color: var(--green); }
+.c-blue   { color: var(--blue); }
+.c-white  { color: #e4e4e4; }
+
+/* 배너의 납작한 원 그대로 — 그라데이션 없이 한 가지 색 */
+.orb.fill { background: currentColor; opacity: .85; }
+.orb.fill.c-white { opacity: .9; }
+
+/* 동심원: 테두리만, 안쪽으로 두 겹 더 */
+.orb.ring { border: 1px solid currentColor; opacity: .5; }
+.orb.ring::before,
+.orb.ring::after {
+  content: ""; position: absolute; border: 1px solid currentColor; border-radius: 50%;
+}
+.orb.ring::before { inset: 17%; opacity: .72; }
+.orb.ring::after  { inset: 38%; opacity: .45; }
+.orb.ring.c-white { opacity: .34; }
+
+/* 궤도: 넓고 납작한 타원 테두리. 살짝 기울여 둔다 */
+.orbit {
+  position: absolute; display: block; border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, .26);
+  will-change: transform;
+}
+.orbit { transform: rotate(var(--rot, 0deg)); }
+.o1 { --rot: -7deg; width: 1040px; height: 300px; top: 10%; left: 50%; margin-left: -300px; }
+.o2 { --rot:  5deg; width: 860px;  height: 240px; top: 30%; left: -300px; }
+.o3 { --rot: -4deg; width: 1120px; height: 340px; top: 50%; right: -340px; }
+.o4 { --rot:  8deg; width: 760px;  height: 220px; top: 72%; left: 50%; margin-left: -520px; }
+
+/* --- 히어로 ----------------------------------------------------------------------------------- */
+.hero { position: relative; z-index: 2; padding: clamp(48px, 9vw, 104px) 0 clamp(40px, 7vw, 88px); }
+
+.hero-grid {
+  display: grid; grid-template-columns: 1.05fr .95fr;
+  gap: clamp(24px, 4vw, 56px); align-items: center;
+}
+
+.eyebrow {
+  margin: 0 0 18px; font-size: 12px; letter-spacing: .22em; text-transform: uppercase;
+  color: var(--dim);
+}
+
+.wordmark {
+  margin: 0; font-weight: 800; line-height: 1.02; letter-spacing: -.028em;
+  font-size: clamp(42px, 7.4vw, 86px);
+}
+.wordmark span { display: inline-block; }
+.w-white  { color: var(--ink); }
+.w-green  { color: var(--green); }
+.w-purple { color: var(--purple); }
+
+.hero-ko {
+  margin: 14px 0 0; font-size: clamp(17px, 2vw, 21px); font-weight: 600;
+  letter-spacing: .01em; color: #d6d6dd;
+}
+
+.hero-lede {
+  margin: 22px 0 0; max-width: 46ch; color: #b9b9c2; font-size: clamp(15px, 1.5vw, 17px);
+}
+
+/* 사실들 */
+.facts {
+  margin: 38px 0 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1px;
+  background: var(--line); border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+}
+.fact { margin: 0; padding: 20px 20px 22px; background: var(--panel); }
+.fact dt {
+  font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--dim);
+  margin-bottom: 10px;
+}
+.fact dd { margin: 0; font-size: 15px; line-height: 1.6; }
+.fact dd b { font-size: 19px; font-weight: 700; letter-spacing: -.01em; }
+
+.copy {
+  margin-top: 12px; display: inline-block; cursor: pointer;
+  background: transparent; color: var(--ink);
+  border: 1px solid #2c2c34; border-radius: 999px;
+  padding: 5px 13px; font: inherit; font-size: 12.5px; line-height: 1.4;
+  transition: border-color .18s, color .18s, background .18s;
+}
+.copy:hover { border-color: var(--green); color: var(--green); }
+.copy.done { border-color: var(--green); background: rgba(0, 197, 95, .12); color: var(--green); }
+
+/* CTA */
+.cta { margin-top: 34px; }
+.btn {
+  display: inline-block; padding: 14px 26px; border-radius: 999px;
+  font-weight: 700; font-size: 15px; letter-spacing: .01em; text-decoration: none;
+}
+.btn-soon {
+  color: var(--dim); border: 1px dashed #32323b; background: transparent; cursor: not-allowed;
+}
+.cta-note { margin: 14px 0 0; font-size: 13.5px; color: var(--dim); }
+.cta-note b { color: #cfcfd6; font-weight: 600; }
+
+/* 모카 */
+.hero-art { justify-self: end; }
+.hero-art img {
+  display: block; width: 100%; height: auto; max-width: 560px;
+  mix-blend-mode: screen;   /* 검정 배경과 이어 붙여 테두리를 지운다 */
+}
+
+/* --- 섹션 ------------------------------------------------------------------------------------- */
+.band { position: relative; z-index: 2; padding: clamp(56px, 8vw, 104px) 0; }
+.band + .band { border-top: 1px solid var(--line); }
+
+.sec-title {
+  display: flex; align-items: center; gap: 12px;
+  margin: 0 0 14px; font-size: clamp(22px, 2.8vw, 30px); font-weight: 700; letter-spacing: -.02em;
+}
+.tick { width: 9px; height: 9px; border-radius: 50%; background: var(--ink); flex: none; }
+.tick-green  { background: var(--green); }
+.tick-blue   { background: var(--blue); }
+.tick-purple { background: var(--purple); }
+
+.sec-lede { margin: 0 0 34px; max-width: 62ch; color: #a4a4ad; font-size: 15.5px; }
+
+/* 진행 방식 표 */
+.run-table { width: 100%; border-collapse: collapse; font-size: 15.5px; }
+.run-table thead th {
+  text-align: left; padding: 0 16px 12px; font-size: 11px; font-weight: 600;
+  letter-spacing: .18em; text-transform: uppercase; color: var(--dim);
+  border-bottom: 1px solid var(--line);
+}
+.run-table thead th:first-child { padding-left: 0; }
+.run-table tbody th, .run-table tbody td {
+  padding: 18px 16px; border-bottom: 1px solid var(--line); vertical-align: top;
+  text-align: left; font-weight: 400;
+}
+.run-table tbody th { padding-left: 0; width: 108px; }
+.run-table tbody tr:hover td, .run-table tbody tr:hover th { background: #060609; }
+
+.dur {
+  display: inline-block; padding: 4px 11px; border-radius: 999px;
+  border: 1px solid #26262e; color: #cfcfd6; font-size: 13.5px; font-weight: 600;
+  white-space: nowrap;
+}
+.dur-key { border-color: rgba(0, 197, 95, .45); color: var(--green); }
+.aim { color: #9a9aa3; }
+
+.run-total {
+  display: flex; justify-content: flex-end; align-items: baseline; gap: 14px;
+  margin: 20px 0 0; font-size: 14px;
+}
+.run-total span { color: var(--dim); letter-spacing: .14em; text-transform: uppercase; font-size: 11px; }
+.run-total b { font-size: 20px; font-weight: 700; }
+
+/* 아직 없는 것 */
+.empty {
+  border: 1px dashed #26262e; border-radius: 16px; padding: 34px 28px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .018), transparent);
+  max-width: 68ch;
+}
+.empty-title { margin: 0 0 8px; font-weight: 700; color: #cfcfd6; }
+.empty p:last-child { margin: 0; color: #8e8e98; font-size: 15px; }
+
+/* --- 바닥 ------------------------------------------------------------------------------------- */
+.foot { position: relative; z-index: 2; border-top: 1px solid var(--line); padding: 44px 0 64px; }
+.foot-grid { display: flex; flex-wrap: wrap; gap: 18px 40px; justify-content: space-between; align-items: flex-end; }
+.foot-mark { margin: 0; font-weight: 800; font-size: 21px; letter-spacing: -.02em; }
+.foot-meta { margin: 0; font-size: 13.5px; color: #9a9aa3; text-align: right; }
+
+/* --- 좁은 화면 -------------------------------------------------------------------------------- */
+@media (max-width: 860px) {
+  .hero-grid { grid-template-columns: 1fr; }
+  .hero-art { justify-self: center; order: -1; }
+  .hero-art img { max-width: 360px; }
+  .foot-grid { flex-direction: column; align-items: flex-start; }
+  .foot-meta { text-align: left; }
+
+  .orbs { --orb-scale: .72; }
+  .o1 { width: 620px; height: 190px; margin-left: -200px; }
+  .o2 { width: 540px; height: 165px; left: -220px; }
+  .o3 { width: 660px; height: 210px; right: -240px; }
+  .o4 { width: 480px; height: 150px; margin-left: -300px; }
+}
+
+@media (max-width: 560px) {
+  body { font-size: 16px; }
+
+  /* 화면이 좁으면 원이 글을 가리기 쉽다. 더 작게, 더 옅게. */
+  .orbs { --orb-scale: .5; }
+  .orb.fill { opacity: .62; }
+  .orb.ring { opacity: .34; }
+  .orbit { border-color: rgba(255, 255, 255, .18); }
+  .o1 { width: 420px; height: 130px; margin-left: -140px; }
+  .o2 { width: 380px; height: 120px; left: -170px; }
+  .o3 { width: 440px; height: 140px; right: -180px; }
+  .o4 { width: 360px; height: 115px; margin-left: -210px; }
+
+  /* 손가락으로 누를 수 있는 크기로 */
+  .copy { padding: 10px 16px; font-size: 14px; }
+  .btn { padding: 15px 24px; }
+  .facts { border-radius: 12px; }
+  .fact { padding: 18px 16px 20px; }
+  .run-table thead { display: none; }
+  .run-table tbody th, .run-table tbody td { display: block; width: auto; padding: 0; border: 0; }
+  .run-table tbody tr {
+    display: block; padding: 18px 0; border-bottom: 1px solid var(--line);
+  }
+  .run-table tbody th { margin-bottom: 10px; }
+  .run-table tbody td.aim { margin-top: 6px; font-size: 14.5px; }
+  .run-table tbody tr:hover td, .run-table tbody tr:hover th { background: transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .orb, .orbits ellipse { transform: none !important; }
+}
