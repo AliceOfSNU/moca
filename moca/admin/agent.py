@@ -141,7 +141,13 @@ class EventTools:
         # 아는 길은 멤버들에게 묻는 것뿐이었다 — 명단을 보면 되는 것을 모임 채팅에 물었다.
         # 참석 버튼은 모임 멤버만 누를 수 있으니(외부 참석자는 다른 길로 신청한다) 이 명단은 우리 멤버다.
         joiners = self.ui.participants(name) if self.ui is not None else None
-        return json.dumps({**event, "joiner_names": joiners, "plan": get_plan(name)}, ensure_ascii=False)
+        out = {**event, "joiner_names": joiners, "plan": get_plan(name)}
+        if joiners is None:
+            # 아무도 신청하지 않았으면 빈 목록이 온다. null은 명단을 읽지 못했다는 뜻인데, 둘 다 null로 보이던
+            # 때는 모카가 "아무도 없음"과 "못 읽음"을 구분하지 못해 개발자에게 물을 수밖에 없었다 (#10).
+            out["joiner_names_note"] = ("명단을 읽지 못했습니다. 아무도 신청하지 않았다는 뜻이 아닙니다 "
+                                        "(그때는 빈 목록이 옵니다). 이 정모의 명단이 필요하면 다시 불러 보세요.")
+        return json.dumps(out, ensure_ascii=False)
 
     # writing -------------------------------------------------------------------
     def create_event(self, name=None, when=None, location=None, capacity=20, expense=0, post_title=None,
@@ -263,7 +269,10 @@ class EventTools:
         return [
             {"type": "function", "name": "list_events", "description": "예정된 정모 목록을 본다.",
              "parameters": {"type": "object", "properties": {}, "required": []}},
-            {"type": "function", "name": "read_event", "description": "정모 하나의 자세한 정보를 본다.",
+            {"type": "function", "name": "read_event",
+             "description": "정모 하나의 자세한 정보를 본다. joiner_names는 참석 신청을 한 멤버의 이름이다. "
+                            "아무도 신청하지 않았으면 빈 목록이고, null이면 명단을 읽지 못한 것이다 "
+                            "(신청자가 없다는 뜻이 아니다).",
              "parameters": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}},
             {"type": "function", "name": "create_event",
              "description": "정모를 새로 만든다. 모든 정모는 프로그램의 활동 하나이므로, 정할 것을 모두 정한 "
