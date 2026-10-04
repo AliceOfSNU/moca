@@ -7,7 +7,9 @@ quietly hardening into "what everyone knows".
 Creating a hypothesis is here; linking evidence and moving the status is harness/evidence.py, which reviews every
 live hypothesis at the start of each 운영 round (a new hypothesis's first review covers all visible knowledge).
 
-One record per hypothesis in data/hypotheses/hypotheses.json:
+One row per hypothesis in the `hypotheses` table of data/moca.db, its evidence links in
+`hypothesis_evidence` (harness/db.py). Until 2026-10 this was data/hypotheses/hypotheses.json; the shape
+handed to callers is unchanged:
 
     {"id": "h_20260921_3fa1", "kind": "need",
      "claim": "{s0}님과 {s1}님은 자기가 만든 AI 결과물을 모임에서 보여 주고 싶어 한다.",
@@ -38,10 +40,11 @@ import secrets
 import sys
 import time
 
+from harness import db
 from harness.tasks import DATA_ROOT
 
 DATA = DATA_ROOT / "hypotheses"
-FILE = DATA / "hypotheses.json"
+FILE = DATA / "hypotheses.json"   # 옮기기 전 저장소. 읽지 않는다 (harness/db.py의 migrate가 쓴다)
 
 KINDS = {"need": "원하는 것", "behavior": "행동 패턴", "relationship": "멤버 사이의 관계",
          "commitment": "참여 의지", "mechanism": "모임 운영 방식의 효과"}
@@ -56,14 +59,51 @@ SHOWN = 10               # 운영 모카 프롬프트에 보여 줄 가설 수
 
 
 def load():
-    if FILE.exists():
-        return json.loads(FILE.read_text(encoding="utf-8"))
-    return []
+    """Every hypothesis, oldest first, in the shape callers have always seen (evidence folded back in)."""
+    con = db.connect()
+    links = {}
+    for r in con.execute("SELECT * FROM hypothesis_evidence ORDER BY hypothesis_id, seq"):
+        links.setdefault(r["hypothesis_id"], []).append(db.evidence_row(r))
+    out = [db.hypothesis_row(r, links.get(r["id"], []))
+           for r in con.execute("SELECT * FROM hypotheses ORDER BY seq")]
+    con.close()
+    return out
 
 
 def save(records):
-    DATA.mkdir(parents=True, exist_ok=True)
-    FILE.write_text(json.dumps(records, ensure_ascii=False, indent=1), encoding="utf-8")
+    """Write the whole list back, as the JSON file did. Callers load(), mutate in place and save() — keeping
+    that contract means evidence.py and the dashboard need no change. Evidence links are replaced wholesale
+    for each hypothesis, so a link removed from the list is removed here too."""
+    con = db.connect()
+    with con:                                   # 한 트랜잭션: 중간에 죽어도 반쯤 쓰인 가설은 남지 않는다
+        seq = {r["id"]: r["seq"] for r in con.execute("SELECT id, seq FROM hypotheses")}
+        nxt = max(seq.values(), default=-1) + 1
+        for h in records:
+            g = h.get("grounds") or {}
+            if h["id"] not in seq:
+                seq[h["id"]], nxt = nxt, nxt + 1
+            con.execute(
+                "INSERT INTO hypotheses (id, kind, claim, members, events, votes, grounds,"
+                " test, status, confidence, goal_id, created_by, created_at, updated_at,"
+                " reviewed_until, history, seq) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                " ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, claim=excluded.claim,"
+                " members=excluded.members, events=excluded.events, votes=excluded.votes,"
+                " grounds=excluded.grounds, test=excluded.test,"
+                " status=excluded.status, confidence=excluded.confidence,"
+                " goal_id=excluded.goal_id, created_by=excluded.created_by, updated_at=excluded.updated_at,"
+                " reviewed_until=excluded.reviewed_until, history=excluded.history",
+                (h["id"], h["kind"], h["claim"], json.dumps(h.get("members") or [], ensure_ascii=False),
+                 json.dumps(h.get("events") or [], ensure_ascii=False),
+                 json.dumps(h.get("votes") or [], ensure_ascii=False),
+                 json.dumps(g, ensure_ascii=False), h.get("test"), h["status"], h.get("confidence"), h.get("goal_id"), h.get("created_by"), h["created_at"],
+                 h.get("updated_at"), h.get("reviewed_until"),
+                 json.dumps(h.get("history") or [], ensure_ascii=False), seq[h["id"]]))
+            con.execute("DELETE FROM hypothesis_evidence WHERE hypothesis_id = ?", (h["id"],))
+            for j, e in enumerate(h.get("evidence") or []):
+                con.execute("INSERT INTO hypothesis_evidence (hypothesis_id, knowledge_id, direction, weight,"
+                            " note, at, seq) VALUES (?,?,?,?,?,?,?)",
+                            (h["id"], e["ref"], e["direction"], e["weight"], e.get("note"), e["at"], j))
+    con.close()
 
 
 def active(records=None):

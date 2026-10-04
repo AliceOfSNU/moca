@@ -1,6 +1,7 @@
 """Knowledge: sourced observations, reports and inferences the agents can build decisions on (documents/orient.md).
 
-One record per line in data/knowledge/records.jsonl:
+One row per record in the `knowledge` table of data/moca.db (harness/db.py); until 2026-10 this was one
+line per record in data/knowledge/records.jsonl, and the shape is unchanged:
 
     {"id": "k_...", "statement": "{s0}는 주말 오후에 대체로 참여 가능하다고 밝혔다.", "subjects": ["멤버이름"],
      "basis": "reported" | "inferred" | "observed", "source_refs": ["m123"], "origin": {"task": "t_...", "channel": "group_chat"},
@@ -19,10 +20,11 @@ import secrets
 import sys
 import time
 
+from harness import db
 from harness.tasks import DATA_ROOT
 
 KNOWLEDGE = DATA_ROOT / "knowledge"
-RECORDS = KNOWLEDGE / "records.jsonl"
+RECORDS = KNOWLEDGE / "records.jsonl"   # 옮기기 전 저장소. 읽지 않는다 (harness/db.py의 migrate가 쓴다)
 BASIS = ["reported", "inferred"]   # what a model may claim in a task report
 OBSERVED = "observed"              # a fact the harness saw itself (counts, sign-ups, who joined) — never from a model
 # what may ground a hypothesis: something a member said, or something the harness saw. 모카's own inferences
@@ -36,9 +38,15 @@ def add(statement, subjects, basis, source_refs, origin):
     record = {"id": f"k_{time.strftime('%Y%m%d')}_{secrets.token_hex(3)}", "statement": statement,
               "subjects": list(subjects), "basis": basis, "source_refs": list(source_refs), "origin": origin,
               "created_at": time.strftime("%Y-%m-%d %H:%M:%S")}
-    KNOWLEDGE.mkdir(parents=True, exist_ok=True)
-    with open(RECORDS, "a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    con = db.connect()
+    with con:
+        seq = con.execute("SELECT COALESCE(MAX(seq), -1) + 1 FROM knowledge").fetchone()[0]
+        con.execute("INSERT INTO knowledge (id, statement, subjects, basis, source_refs, origin, created_at,"
+                    " seq) VALUES (?,?,?,?,?,?,?,?)",
+                    (record["id"], statement, json.dumps(record["subjects"], ensure_ascii=False), basis,
+                     json.dumps(record["source_refs"], ensure_ascii=False),
+                     json.dumps(origin, ensure_ascii=False), record["created_at"], seq))
+    con.close()
     return record
 
 
@@ -82,11 +90,12 @@ def latest_versions():
 
 
 def load_all(include_hidden=False):
-    """Every record 운영 모카 may see now. `include_hidden` is for the harness's own bookkeeping only."""
-    if not RECORDS.exists():
-        return []
-    records = [json.loads(line) for line in RECORDS.read_text(encoding="utf-8").splitlines() if line.strip()]
-    return records if include_hidden else visible(records)
+    """Every record 운영 모카 may see now. `include_hidden` is for the harness's own bookkeeping only.
+    Oldest first, the order they came in — a few callers lean on it (recent(), the daily digest)."""
+    con = db.connect()
+    rows = [db.knowledge_row(r) for r in con.execute("SELECT * FROM knowledge ORDER BY seq")]
+    con.close()
+    return rows if include_hidden else visible(rows)
 
 
 def latest_by_key():
@@ -142,8 +151,12 @@ def recent(n=20):
 
 
 def since(timestamp):
-    """Records created after `timestamp` ("YYYY-MM-DD HH:MM:SS"), oldest first; all of them if it is None."""
-    return [r for r in load_all() if timestamp is None or r["created_at"] > timestamp]
+    """Records created after `timestamp` ("YYYY-MM-DD HH:MM:SS"), oldest first; all of them if it is None.
+    The date filter runs in SQL, but what is *visible* still needs every row: a record is hidden by a newer
+    one with the same origin.key, and that newer one may be outside this window."""
+    if timestamp is None:
+        return load_all()
+    return [r for r in load_all() if r["created_at"] > timestamp]
 
 
 def search(query=None, basis=None, since_date=None, subject=None, limit=20):

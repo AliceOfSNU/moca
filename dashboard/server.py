@@ -3,7 +3,7 @@
 Deliberately separate from the moca code: it imports nothing from it. Its only contract is the files moca keeps
 under data/ — goals, steps, tasks, knowledge, hypotheses, programs, consent and the loop's runtime status. It reads
 them, and writes exactly four things, each checked with the same rules as the harness: a new top-level goal into
-data/goals/goals.json, a new hypothesis into data/hypotheses/hypotheses.json (for seeding 모카's first ones), a
+data/goals/goals.json, a new hypothesis into data/moca.db (for seeding 모카's first ones), a
 new program into data/programs/programs.json, and a request (with a note) that the planner rewrite a program's plan.
 
 Member names are shown the way 운영 모카 sees them: filled in only for members who allowed 모임 운영 use,
@@ -21,6 +21,7 @@ import os
 import pathlib
 import re
 import secrets
+import sqlite3
 import sys
 import threading
 import time
@@ -87,11 +88,60 @@ def _jsonl(path):
     return out
 
 
+# 지식과 가설은 2026-10부터 data/moca.db에 있다 (moca: harness/db.py). 이 패키지는 moca를 import할 수
+# 없으므로 sqlite3로 직접 읽고, 바깥으로 내보내는 모양은 예전 JSON과 똑같이 맞춘다.
+DB = DATA / "moca.db"
+
+
+def _db():
+    con = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=5)
+    con.row_factory = sqlite3.Row
+    return con
+
+
+def _knowledge_rows():
+    """Every knowledge record, oldest first, in the shape the JSONL used to hand over."""
+    if not DB.exists():
+        return []
+    with _db() as con:
+        return [{"id": r["id"], "statement": r["statement"], "subjects": json.loads(r["subjects"]),
+                 "basis": r["basis"], "source_refs": json.loads(r["source_refs"]),
+                 "origin": json.loads(r["origin"]), "created_at": r["created_at"]}
+                for r in con.execute("SELECT * FROM knowledge ORDER BY seq")]
+
+
+def _hypothesis_rows():
+    """Every hypothesis, oldest first, evidence folded back in — the old hypotheses.json shape."""
+    if not DB.exists():
+        return []
+    with _db() as con:
+        links = {}
+        for r in con.execute("SELECT * FROM hypothesis_evidence ORDER BY hypothesis_id, seq"):
+            links.setdefault(r["hypothesis_id"], []).append(
+                {"ref": r["knowledge_id"], "direction": r["direction"], "weight": r["weight"],
+                 "note": r["note"], "at": r["at"]})
+        out = []
+        for r in con.execute("SELECT * FROM hypotheses ORDER BY seq"):
+            h = {"id": r["id"], "kind": r["kind"], "claim": r["claim"], "members": json.loads(r["members"]),
+                 "events": json.loads(r["events"]), "votes": json.loads(r["votes"]),
+                 "grounds": json.loads(r["grounds"]), "test": r["test"], "status": r["status"],
+                 "confidence": r["confidence"], "evidence": links.get(r["id"], []), "goal_id": r["goal_id"],
+                 "created_at": r["created_at"], "updated_at": r["updated_at"],
+                 "history": json.loads(r["history"])}
+            if r["created_by"] is not None:
+                h["created_by"] = r["created_by"]
+            if r["reviewed_until"] is not None:
+                h["reviewed_until"] = r["reviewed_until"]
+            out.append(h)
+        return out
+
+
 def _sources():
+    # WAL 모드라 쓰기는 -wal에 먼저 닿는다. 본체만 보면 바뀐 줄 모른다.
     return [DATA / "goals" / "goals.json", DATA / "goals" / "steps.jsonl", DATA / "tasks" / "log.jsonl",
-            DATA / "knowledge" / "records.jsonl", DATA / "members" / "scope_consent.json",
+            DB, DB.with_name(DB.name + "-wal"), DATA / "members" / "scope_consent.json",
             DATA / "runtime" / "status.json", DATA / "runtime" / "presence.json",
-            DATA / "hypotheses" / "hypotheses.json", DATA / "programs" / "programs.json",
+            DATA / "programs" / "programs.json",
             DATA / "activities" / "activities.json", DATA / "mock" / "app.json"] + sorted((DATA / "tasks").glob("t_*.json"))
 
 
@@ -114,7 +164,7 @@ GROUNDING = ("reported", "observed")  # what may ground a hypothesis — never �
 
 def _visible_knowledge(names):
     """moca's knowledge.visible: newest per key, newest version per group, no tombstones, consent for notes."""
-    records = _jsonl(DATA / "knowledge" / "records.jsonl")
+    records = _knowledge_rows()
     newest = {r["origin"]["key"]: r["id"] for r in records if r.get("origin", {}).get("key")}
     version = {r["origin"]["group"]: r["origin"].get("version") for r in records if r.get("origin", {}).get("group")}
     return [r for r in records
@@ -242,7 +292,7 @@ def _roster():
 def _hypotheses(names):
     knowledge = {r["id"]: _statement(r, names) for r in _visible_knowledge(names)}
     out = []
-    for h in _json(DATA / "hypotheses" / "hypotheses.json", []):
+    for h in _hypothesis_rows():
         grounds = h.get("grounds", {})
         out.append(dict(h, claim_shown=names.fill(h["claim"], h.get("members")),
                         members_shown=[names.show(m) for m in h.get("members", [])],
@@ -267,7 +317,7 @@ def _hypothesis_options(names):
 def _programs(names):
     """Programs with their text filled in as 운영 모카 sees it, their grounding hypotheses' current state, and a flag
     for each hypothesis that has since fallen below supported (the harness only flags; it never changes a program)."""
-    hypos = {h["id"]: h for h in _json(DATA / "hypotheses" / "hypotheses.json", [])}
+    hypos = {h["id"]: h for h in _hypothesis_rows()}
     knowledge = {r["id"]: _statement(r, names) for r in _visible_knowledge(names)}
     acts = _json(DATA / "activities" / "activities.json", [])
     goals = _json(DATA / "goals" / "goals.json", [])
@@ -315,7 +365,7 @@ def _program_options(names):
     return {"types": PROG_TYPES, "repeat_kinds": PROG_REPEAT_KINDS, "limits": PROG_LIMITS, "ranges": PROG_RANGES,
             "max_live": PROG_MAX_LIVE,
             "hypotheses": [{"id": h["id"], "claim": names.fill(h["claim"], h.get("members")), "status": h["status"]}
-                           for h in _json(DATA / "hypotheses" / "hypotheses.json", []) if h["status"] in PROG_GROUNDING],
+                           for h in _hypothesis_rows() if h["status"] in PROG_GROUNDING],
             "goals": [{"id": g["id"], "objective": g["objective"]} for g in _json(DATA / "goals" / "goals.json", [])
                       if g["status"] not in FINISHED]}
 
@@ -604,9 +654,8 @@ def add_hypothesis(body):
         return None, f"없는 정모나 투표입니다: {unknown}"
 
     template, subjects = _templatize(claim, set(lists["members"]) | {n for n in roster if len(n) > 1 and n in claim})
-    path = DATA / "hypotheses" / "hypotheses.json"
     with _write_lock:
-        records = _json(path, [])  # re-read right before writing: the loop saves this file too
+        records = _hypothesis_rows()  # re-read right before writing: the loop writes this table too
         live = [h for h in records if h["status"] != "refuted"]
         if len(live) >= HYPO_MAX_ACTIVE:
             return None, f"폐기되지 않은 가설이 이미 {len(live)}개입니다 (최대 {HYPO_MAX_ACTIVE})"
@@ -620,11 +669,25 @@ def add_hypothesis(body):
                   "members": subjects, "events": lists["events"], "votes": lists["votes"],
                   "grounds": {"knowledge": lists["knowledge_ids"], "reasoning": reasoning, "source": "developer"},
                   "test": test, "status": "open", "confidence": None, "evidence": [],
-                  "goal_id": None, "created_by": SEEDED_BY, "created_at": now, "updated_at": now}
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".dashboard.tmp")
-        tmp.write_text(json.dumps(records + [record], ensure_ascii=False, indent=1), encoding="utf-8")
-        os.replace(tmp, path)
+                  "goal_id": None, "created_by": SEEDED_BY, "created_at": now, "updated_at": now,
+                  "history": []}
+        con = sqlite3.connect(DB, timeout=10)                 # 쓸 때만 읽기전용이 아닌 연결
+        try:
+            with con:
+                seq = con.execute("SELECT COALESCE(MAX(seq), -1) + 1 FROM hypotheses").fetchone()[0]
+                con.execute(
+                    "INSERT INTO hypotheses (id, kind, claim, members, events, votes, grounds, test, status,"
+                    " confidence, goal_id, created_by, created_at, updated_at, history, seq)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (record["id"], record["kind"], record["claim"],
+                     json.dumps(record["members"], ensure_ascii=False),
+                     json.dumps(record["events"], ensure_ascii=False),
+                     json.dumps(record["votes"], ensure_ascii=False),
+                     json.dumps(record["grounds"], ensure_ascii=False), record["test"], record["status"],
+                     record["confidence"], record["goal_id"], record["created_by"], record["created_at"],
+                     record["updated_at"], "[]", seq))
+        finally:
+            con.close()
     return record, None
 
 
@@ -676,7 +739,7 @@ def add_program(body):
             return None, f"{field}는 {PROG_LIMITS[field]}자 이내여야 합니다"
     if not links:
         return None, "존재 근거가 되는 가설을 하나 이상 골라야 합니다 (뒷받침됨 이상)"
-    hypos = {h["id"]: h for h in _json(DATA / "hypotheses" / "hypotheses.json", [])}
+    hypos = {h["id"]: h for h in _hypothesis_rows()}
     for x in links:
         h = hypos.get(x["id"])
         if not h:
