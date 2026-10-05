@@ -570,6 +570,14 @@ class GoalLoop:
             ids = wait.get("task_ids") or []
             if not ids or not set(ids) <= open_ids:
                 return "거절", f"기다릴 수 있는 작업은 진행 중인 작업뿐입니다: {sorted(open_ids) or '없음'}", False, {}
+            # 운영 모카가 맡긴 일(program_moca 작업)은 이 목표가 끝나야 끝난다. 그것을 기다리면 영원히 깨지 않는다
+            # (2026-10-05: 담당 모카가 자기에게 맡겨진 작업을 '진행 중인 같은 일'로 읽고 기다렸다)
+            mine = {focus_id} | {g["id"] for g in G._ancestors(goals, goal)}
+            own = [t["id"] for t in tasks.open_tasks() if t["id"] in ids
+                   and ((t.get("spec") or {}).get("target") or {}).get("goal_id") in mine]
+            if own:
+                return "거절", (f"{own}은 운영 모카가 너에게 맡긴 일 그 자체다 — 이 목표가 끝나야 끝나므로 기다리면 "
+                               "영원히 깨지 않는다. 기다리지 말고 직접 해서 이 목표를 끝내라"), False, {}
             if not self.dry_run:
                 # a wait replaces any earlier rest: the goal wakes when its tasks finish, not when an old cooldown ends
                 G.update(focus_id, wait={"type": "task_terminal", "task_ids": ids, "since": tasks.now()},
