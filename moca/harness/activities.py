@@ -327,6 +327,13 @@ def line(a, full=True):
         out += f"\n    · {s['name']}: {state}"
     if a.get("notes"):
         out += f"\n    메모: {a['notes']}"
+    # Dots가 만든 소개글을 로하가 검토해 data/activities/dots/<id>/에 두면, 정모 안내 글은 그것으로 쓴다.
+    # 모카는 파일을 읽을 수 없으니 여기서 보여 준다 (harness/dots.py).
+    intro = DATA / "dots" / a["id"] / "introduction-post.md"
+    if a["status"] in OPEN and intro.exists():
+        text = intro.read_text(encoding="utf-8").strip()
+        out += ("\n    Dots가 만든 소개글 (로하 검토 완료 — 정모 안내 글(write_post)은 이 글을 그대로 쓴다. 첫 줄의 '# '는 빼고"
+                " 제목으로 쓴다):\n" + "\n".join("      " + l for l in text.splitlines()))
     return out
 
 
