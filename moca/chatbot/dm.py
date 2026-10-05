@@ -32,7 +32,7 @@ from somoim.board import SomoimBoard
 from somoim.chat import MINE, SomoimChat, split_message
 from somoim.direct import DirectChat
 
-DM_MODEL = "gpt-5.6-sol"
+DM_MODEL = "gpt-6.1-sol"
 DM_REASONING = "xhigh"  # one above high; 1:1 replies are few and personal, so they get the most thought
 DM_DATA = DATA_ROOT / "dm"
 GREETINGS = DM_DATA / "greetings.json"
