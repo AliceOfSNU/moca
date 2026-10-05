@@ -84,8 +84,10 @@ Dots에게 보내는 작업 요청서 틀. 하네스가 {{...}} 자리를 채워
 
 모든 이미지와 웹사이트는 같은 모임에서 나온 것처럼 보여야 해. 참고 파일은 `MOCA/workspace/activities/example/`에 있어.
 
-- `MOCA/workspace/activities/example/moca.png` — 모카. 토끼와 고양이를 섞은 모습을 별자리 같은 선과 점으로 그린 캐릭터야.
-  배너에는 모카가 들어가야 해. 같은 캐릭터로 보이게 그려 줘.
+- `MOCA/workspace/activities/example/moca_anime.png`, `MOCA/workspace/activities/example/moca_real.png` — 모카.
+  같은 캐릭터를 두 가지 그림체로 그린 거야: 일러스트와, 실제 인형에 가까운 그림. 어느 쪽이든 아래 특징이 그대로
+  보여야 같은 모카로 알아봐 — 하얗고 복슬복슬한 털, 안쪽이 분홍빛인 긴 토끼 귀, 분홍빛의 큰 눈, 귀에 걸린
+  별 장식 금색 고리, 가슴의 분홍 별. 배너에는 모카가 들어가야 하고, 그림체는 활동 분위기에 맞는 쪽으로 골라.
 - `MOCA/workspace/activities/example/banner.png` — 지난 활동의 배너. 분위기 참고용이야. 그대로 베끼지는 마.
 - 기본 색: 검정 바탕에 흰색(#FFFFFF), 초록(#00C55F), 보라(#9652FA), 파랑(#006AFE). 활동의 분위기에 맞게
   바꿔도 되지만, 바꿨다면 `manifest.json`의 notes에 이유를 적어 줘.
