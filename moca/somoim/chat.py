@@ -280,28 +280,38 @@ class ChatScreen:
             return None
         self.ui.tap(box)
         time.sleep(1)
-        prefix = ""
         with self.dev.adb_keyboard():  # one keyboard for the whole sequence, or the member list closes
-            self.dev.clear_text()
-            if mention:
-                if self._mention(mention):
-                    prefix = f"@{mention} "
-                else:
-                    self.log(f"  멘션 목록에서 '{mention}'을 찾지 못해 멘션 없이 보냅니다")
-                    self.dev.clear_text()
-            self.dev.type_text(text)
-            time.sleep(1)
-            root = self.ui.dump(windows=True)
-            if self._popup(root) is not None:
-                self.ui.back()  # close the member list if it is still open
+            # 글자가 입력칸에 들어가지 않는 일이 가끔 있다 — 칸이 빈 채로 남고 힌트('@ 입력시 태그')만
+            # 보인다. 거기서 포기하면 그 말은 영영 전해지지 않는다: 답장은 보내기 전에 이미 '답했음'으로
+            # 표시되고 다시 시도하지 않기 때문이다 (run.py의 mark_answered). 그래서 통째로 다시 쓴다 —
+            # 멘션까지 다시 다는 것은, 중간에 지우면 태그도 함께 지워져 반쪽짜리가 되기 때문이다.
+            for attempt in range(1, 4):
+                prefix = ""
+                self.dev.clear_text()
+                if mention:
+                    if self._mention(mention):
+                        prefix = f"@{mention} "
+                    else:
+                        self.log(f"  멘션 목록에서 '{mention}'을 찾지 못해 멘션 없이 보냅니다")
+                        self.dev.clear_text()
+                self.dev.type_text(text)
                 time.sleep(1)
                 root = self.ui.dump(windows=True)
-            expected = prefix + text
-            box = self._input(root)
-            if box is None or box.get("text").strip() != expected.strip():
-                self.log(f"  입력 확인 실패: {box.get('text') if box is not None else None!r}")
-                self.dev.clear_text()
-                return None
+                if self._popup(root) is not None:
+                    self.ui.back()  # close the member list if it is still open
+                    time.sleep(1)
+                    root = self.ui.dump(windows=True)
+                expected = prefix + text
+                box = self._input(root)
+                if box is not None and box.get("text").strip() == expected.strip():
+                    break
+                self.log(f"  입력 확인 실패 ({attempt}/3): {box.get('text') if box is not None else None!r}")
+                if attempt == 3:
+                    self.dev.clear_text()
+                    return None
+                if box is not None:
+                    self.ui.tap(box)      # 초점을 잃었을 수 있다
+                    time.sleep(1)
             if dry_run:
                 self.log(f"  (전송 직전 확인만) 입력칸: {expected!r}")
                 self.dev.clear_text()

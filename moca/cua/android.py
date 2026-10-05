@@ -86,7 +86,13 @@ class AndroidDevice:
         prev = self.adb("shell", "settings", "get", "secure", "default_input_method").strip()
         if prev != ADB_IME:
             self.adb("shell", "ime", "set", ADB_IME)
-            time.sleep(0.5)
+            # 바뀌었는지 확인하고 넘어간다. 고정된 0.5초로는 느린 순간에 아직 안 붙은 채로 글자를 쏘게 되고,
+            # 그러면 방송이 아무 데도 닿지 않아 입력칸이 빈 채로 남는다 (로그의 '입력 확인 실패').
+            for _ in range(12):
+                time.sleep(0.25)
+                if self.adb("shell", "settings", "get", "secure",
+                            "default_input_method").strip() == ADB_IME:
+                    break
         self._ime_held = True
         try:
             yield
