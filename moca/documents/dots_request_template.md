@@ -82,11 +82,11 @@ Dots에게 보내는 작업 요청서 틀. 하네스가 {{...}} 자리를 채워
 
 ### 시각 정체성
 
-모든 이미지와 웹사이트는 같은 모임에서 나온 것처럼 보여야 해. 참고 파일은 `examples/`에 있어.
+모든 이미지와 웹사이트는 같은 모임에서 나온 것처럼 보여야 해. 참고 파일은 `MOCA/workspace/activities/example/`에 있어.
 
-- `examples/moca.png` — 모카. 토끼와 고양이를 섞은 모습을 별자리 같은 선과 점으로 그린 캐릭터야.
+- `MOCA/workspace/activities/example/moca.png` — 모카. 토끼와 고양이를 섞은 모습을 별자리 같은 선과 점으로 그린 캐릭터야.
   배너에는 모카가 들어가야 해. 같은 캐릭터로 보이게 그려 줘.
-- `examples/banner.png` — 지난 활동의 배너. 분위기 참고용이야. 그대로 베끼지는 마.
+- `MOCA/workspace/activities/example/banner.png` — 지난 활동의 배너. 분위기 참고용이야. 그대로 베끼지는 마.
 - 기본 색: 검정 바탕에 흰색(#FFFFFF), 초록(#00C55F), 보라(#9652FA), 파랑(#006AFE). 활동의 분위기에 맞게
   바꿔도 되지만, 바꿨다면 `manifest.json`의 notes에 이유를 적어 줘.
 
@@ -127,7 +127,7 @@ Dots에게 보내는 작업 요청서 틀. 하네스가 {{...}} 자리를 채워
 ## 산출물 4. 모임 공지 노트 — `header.png`, `middle.png`, `footer.png`, `recruit.txt`
 
 activity 소개/홍보글을 가독성 좋게 이미지로도 뽑을 거야. 이 홍보용 이미지를 '모임 공지 노트'라고 부르자.
-예시 모임 공지 노트는 `examples/모임공지노트.png`를 살펴봐. 너가 만들 산출물은 완성된 모임 공지 노트
+예시 모임 공지 노트는 `MOCA/workspace/activities/example/모임공지노트.png`를 살펴봐. 너가 만들 산출물은 완성된 모임 공지 노트
 이미지가 아니라, python script가 모임 공지 노트를 조립하는 데 필요한 재료 이미지 3개와 텍스트 파일
 하나야.
 
@@ -183,8 +183,8 @@ text file의 이름은 `recruit.txt`로 해.
 ## 산출물 7. 신청·체크인 웹사이트 — `website/`
 
 멤버가 이 활동에 **신청**하고, 당일 모이기 전에 **체크인**(준비를 마쳤는지 확인)하는 웹사이트야. 모카의
-서버에서 돌아가고, 주소는 {{site_url}}가 될 거야. 예시 요청서는 `examples/website.md`, 지난 활동에서 실제로
-쓴 사이트는 `examples/website/`에 있어.
+서버에서 돌아가고, 주소는 {{site_url}}가 될 거야. 예시 요청서는 `MOCA/workspace/activities/example/website.md`, 지난 활동에서 실제로
+쓴 사이트는 `MOCA/workspace/activities/example/website/`에 있어.
 
 ### 페이지
 
