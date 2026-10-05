@@ -2,7 +2,8 @@
 Dots에게 보내는 작업 요청서 틀. 하네스가 {{...}} 자리를 채워 Google Drive에 올리고, Dots가 그것을 읽고
 산출물을 같은 곳에 올린다 (documents/program_agent_steps.md, Refined Program&Activity Development Workflow).
 
-채우는 자리 — 'delegate to Dots' 도구의 인자가 곧 이것이다:
+채우는 자리 — harness/dots.py가 채운다. 기록에 있는 것(요청, 모임, 프로그램, 활동 이름·종류, 시간, 장소, 인원,
+웹사이트)은 하네스가, 나머지(목표, 대상, 진행, 준비물, 소요, 비용, 마감)는 delegate_to_dots의 인자로 모카가:
 
   요청      request_id, requested_at, due, output_folder
   모임      moim_name, moim_intro, member_count
@@ -62,7 +63,7 @@ Dots에게 보내는 작업 요청서 틀. 하네스가 {{...}} 자리를 채워
 
 - ⏰ 시간: {{time}} (소요 {{duration}})
 - 📍 장소: {{place}}
-- 👥 참여 인원: 최대 {{seats}}명
+- 👥 참여 인원: {{seats}}
 - 💰 비용: {{fee}}
 - 📝 신청 마감: {{signup_deadline}}
 - ✅ 체크인 마감: {{checkin_deadline}}
@@ -110,7 +111,7 @@ Dots에게 보내는 작업 요청서 틀. 하네스가 {{...}} 자리를 채워
      "나도 되겠네" 할 수 있게
   4. 미리 할 것과 당일 흐름 — 길게 풀지 말고 핵심만
   5. 일정·장소·인원·비용·신청 방법을 목록으로
-- 신청 방법에는 웹사이트 주소 {{site_url}}를 넣어.
+- 신청 방법에는 웹사이트 주소를 넣어: {{site_url}}
 - **게시할 글만 넣어.** "게시 대상", "게시 전 확인할 것" 같은 우리에게 하는 말은 이 파일에 넣지 말고
   `questions.md`에 적어. 이 파일은 손대지 않고 그대로 올라갈 수 있어야 해.
 - 길이는 소모임 앱 화면에서 스크롤 두세 번이면 읽을 수 있을 만큼.
@@ -180,12 +181,15 @@ text file의 이름은 `recruit.txt`로 해.
 
 ### 반드시 포함할 정보
 
-이 모임의 시간은 {{time}}, 장소는 {{place}}, 참여 인원은 최대 {{seats}}명, 비용은 {{fee}}야.
+- 시간: {{time}}
+- 장소: {{place}}
+- 참여 인원: {{seats}}
+- 비용: {{fee}}
 
 ## 산출물 7. 신청·체크인 웹사이트 — `website/`
 
 멤버가 이 활동에 **신청**하고, 당일 모이기 전에 **체크인**(준비를 마쳤는지 확인)하는 웹사이트야. 모카의
-서버에서 돌아가고, 주소는 {{site_url}}가 될 거야. 예시 요청서는 `MOCA/workspace/activities/example/website.md`, 지난 활동에서 실제로
+서버에서 돌아가. 주소: {{site_url}}. 예시 요청서는 `MOCA/workspace/activities/example/website.md`, 지난 활동에서 실제로
 쓴 사이트는 `MOCA/workspace/activities/example/website/`에 있어.
 
 ### 페이지

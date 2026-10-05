@@ -427,9 +427,14 @@ class Tools:
         cancel(activity_id, reason=reason)
         return f"cancel_activity 완료: {activity_id}를 접었습니다 ({reason})"
 
+    def delegate_to_dots(self, activity_id=None, **fields):
+        from harness import dots  # dots reads activities; import here so neither module needs the other at load time
+        return dots.Tools(self.program_id, log=self.log, dry_run=self.dry_run).delegate_to_dots(activity_id, **fields)
+
     def handlers(self):
         return {"draft_activity": self.draft_activity, "update_activity": self.update_activity,
-                "cancel_activity": self.cancel_activity, "adopt_event": self.adopt_event}
+                "cancel_activity": self.cancel_activity, "adopt_event": self.adopt_event,
+                "delegate_to_dots": self.delegate_to_dots}
 
 
 def main():

@@ -56,7 +56,7 @@ WRITE_TOOLS = ("create_event", "edit_event", "cancel_event", "set_attendance", "
                "finish_program")
 PROGRAM_ONLY = ("open_program_signup",)  # 프로그램 담당 모카만, 자기 프로그램에 대해서만
 ADMIN_ONLY = ("finish_program",)         # 운영 모카만 (어떤 프로그램이 존재하는지는 운영 모카가 정한다)
-ACTIVITY_TOOLS = ("draft_activity", "update_activity", "cancel_activity", "adopt_event")  # 프로그램 모카만
+ACTIVITY_TOOLS = ("draft_activity", "update_activity", "cancel_activity", "adopt_event", "delegate_to_dots")  # 프로그램 모카만
 READ_TOOLS = ("list_events", "read_event", "list_votes", "read_vote")
 
 EXECUTOR_CATALOG = f"""- {{type: agent, name: chat_moca}}  모임 채팅에서 멤버들에게 묻고 답을 모아 결과(요약 + 출처 있는 지식)로 돌려준다.
@@ -87,6 +87,12 @@ EXECUTOR_CATALOG = f"""- {{type: agent, name: chat_moca}}  모임 채팅에서 �
 - {{type: tool, name: adopt_event}}      (프로그램 모카만) 남이 이미 열어 둔 정모를 이 활동의 정모로 붙인다. arguments_json: {{"activity_id", "event_name"}}
     로하가 연 정모를 프로그램이 맡아 진행할 때 쓴다. 붙인 뒤에도 그 정모의 이름·시각·장소·취소는 모카가 바꿀 수 없다.
     참석자 명단이 이 활동의 참가자가 되므로, 그 사람들에게는 dm_moca로 1:1 안내를 보낼 수 있다.
+- {{type: tool, name: delegate_to_dots}} (프로그램 모카만) 활동의 준비물을 Dots(외부 에이전트)에게 맡긴다 — 소개글, 배너, 모임 공지 노트 재료,
+    신청·체크인 웹사이트. 활동의 진행 방식이 정해진 뒤에 쓴다. arguments_json: {{"activity_id", "activity_goal", "activity_audience",
+    "activity_outline", "participant_prep"?, "duration"?, "fee"?, "signup_deadline"?, "checkin_deadline"?, "due"?}}
+    goal은 끝났을 때 참가자가 얻는 것, audience는 누구를 위한 활동인지, outline은 진행 순서(바깥 사람이 읽고 만들 수 있게).
+    이름·시간·장소·인원은 하네스가 활동 기록에서 채운다. 정해지지 않은 칸은 비워 두면 '미정'이 된다.
+    요청서는 Google Drive와 다른 회사의 에이전트로 나간다 — 멤버 이름을 쓰지 말고 '진행자', '참가자'처럼 역할로 써라.
 - {{type: tool, name: open_program_signup}} (프로그램 모카만) 프로그램의 참가 등록 정모를 연다. arguments_json: {{"program_id", "post_title"}}
 - {{type: tool, name: finish_program}}   (운영 모카만) 프로그램을 끝낸다. arguments_json: {{"program_id", "status": "finished"|"dropped", "reason"}}
     finished는 목적을 이뤘을 때, dropped는 그만둘 때. 담당 모카의 목표와 기획 중이던 활동도 함께 정리된다.
