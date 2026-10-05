@@ -61,6 +61,10 @@ TASK = """
 지금은 대화에 답하는 게 아니야. '{member}'님에게 모카가 먼저 보낼 질문 하나를 만들거나, 지금은 묻지 않기로
 정하는 거야. 아래 '먼저 묻기' 지침을 그대로 따라.
 
+위 기능 문서에는 모카가 먼저 1:1을 보내는 경우가 둘뿐이라고 적혀 있지만, 이 질문은 하네스가 따로 정한
+규칙(하루 횟수, 시간대, 그만 받기 안내)에 따라 보내는 것이라 그 제한과 별개야. 묻는 것 자체를 망설이지 마.
+이 작업에서는 도구를 쓸 수 없어 — 위에 적힌 도구 안내는 대화할 때의 것이야.
+
 {guide}
 
 ## 내보내는 모양
@@ -72,13 +76,25 @@ TASK = """
 - target: 구체적으로 무엇을 확인하려는지. "AI 수준" 같은 말 말고 "파일을 첨부해 물어본 경험"처럼.
 - why_this_person: 왜 이 사람에게, 왜 지금 이걸 묻는지. 이미 아는 것과 겹치지 않는다는 것을 여기서 밝혀.
 - message: 실제로 보낼 질문 문장. 모카의 말투로, 선택지는 넣지 마 — 번호와 선택지는 하네스가 붙인다.
-  질문은 하나만. 1~3문장.
-- choices: 선택지 {lo}~{hi}개. 짧게(각 {clen}자 이내). 번호를 붙이지 마. 모르거나 해당 없을 수 있는
+  질문은 하나만. 1~3문장. '여러 개 골라도 돼'도 쓰지 마 — multi가 true면 하네스가 붙인다.
+  날짜·요일·시간은 아래 기록에 적힌 그대로만 써. 기억으로 짐작해 요일을 붙이지 마 — 틀리면 멤버에게
+  틀린 사실을 말하는 거야. 확실하지 않으면 날짜 없이 써.
+- choices: 선택지 {lo}~{hi}개, 보통은 3~4개. 출퇴근길에 폰으로 읽는다 — 많을수록 고르기 어렵다.
+  짧게(각 {clen}자 이내). 번호를 붙이지 마. 모르거나 해당 없을 수 있는
   질문이면 '모르겠어', '안 써봤어', '기타' 같은 빠져나갈 자리를 넣어.
 - multi: 여러 개 골라도 되는 질문이면 true.
 - reads_as: 답으로 알 수 있는 것.
 - does_not_mean: 이 답으로 추론하면 안 되는 것 (지침의 '답을 어디까지 읽을 것인가').
 """
+
+
+WEEKDAYS = "월화수목금토일"
+
+
+def today():
+    """'2026년 10월 5일 월요일' — 서버 로케일에 따라 (Mon)이 되던 것을 한국어로 고정한다."""
+    t = time.localtime()
+    return f"{t.tm_year}년 {t.tm_mon}월 {t.tm_mday}일 {WEEKDAYS[t.tm_wday]}요일"
 
 
 def known_block(member):
@@ -96,7 +112,9 @@ def known_block(member):
             continue
         if r["origin"].get("channel") == "member_note":
             continue
-        text = re.sub(r"\{s0\}(님)?", name + "님", r["statement"])
+        # 이 멤버 자신의 사실을 자기 1:1에 보여 주는 것이라 동의 규칙과 상관없이 이름으로 쓴다.
+        # 은/는 · 이/가는 render가 이름에 맞춰 다시 고른다
+        text = K.render(r, names=[name])
         lines.append(f"- {text} ({K.BASIS_LABEL[r['basis']]}, {r['created_at'][:10]})")
     if not lines:
         return "## 모임에서 이미 알려진 것\n(아직 없음)"
@@ -113,7 +131,7 @@ def build(member, slot):
     convo = ("## 1:1 대화 기록 (오래된 순, 최근 %d개)\n" % HISTORY
              + ("\n".join(format_line(m) for m in history) if history else "(아직 없음)"))
     asked = "## 이 멤버에게 최근 먼저 물은 질문\n(아직 없음)"   # 보내는 층이 생기면 여기에 채운다
-    now = f"## 지금\n{time.strftime('%Y-%m-%d (%a)')} {slot} 시간대"
+    now = f"## 지금\n{today()} {slot} 시간대"
     return instructions, "\n\n".join([known_block(member), convo, asked, now])
 
 

@@ -107,12 +107,15 @@ def latest_by_key():
     return out
 
 
-def render(record):
-    """The statement as 운영 모카 may see it right now."""
+def render(record, names=None):
+    """The statement as 운영 모카 may see it right now.
+    `names` replaces the consent rule for who is named — for a member's own 1:1, where it is their own fact
+    shown back to the conversation it came from (chatbot/asking.py). None means the usual rule."""
     from chatbot.memory_consent import shares  # consent is read at display time, on purpose
     from chatbot.profiles import call_name     # and so is the name they asked to be called
-    public = record.get("origin", {}).get("channel") in PUBLIC_CHANNELS
-    names = [call_name(n) if public or shares(n) else None for n in record["subjects"]]
+    if names is None:
+        public = record.get("origin", {}).get("channel") in PUBLIC_CHANNELS
+        names = [call_name(n) if public or shares(n) else None for n in record["subjects"]]
 
     def fill(m):
         i = int(m.group(1))
