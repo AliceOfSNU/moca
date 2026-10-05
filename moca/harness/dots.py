@@ -18,8 +18,9 @@
 
 정해지지 않은 값은 '미정'으로 넣고, Dots는 그것을 [미정: …]으로 남긴다 (요청서의 규칙).
 
-Drive와는 rclone으로 이야기한다 (원격 이름은 MOCA_DRIVE_REMOTE, 기본 gdrive). 연결이 없으면 맡기지 않고
-거절한다 — 맡겼다고 생각한 모카가 오지 않을 결과물을 기다리게 두지 않기 위해서다.
+Drive와는 rclone으로 이야기한다 (원격 이름은 MOCA_DRIVE_REMOTE, 기본 gdrive). 요청서는 언제나
+data/activities/dots/<활동 id>/request.md에도 남는다. 서버에 Drive 연결이 없는 동안은 거기까지 하고 로하가
+직접 올린다 — 모카에게도 그렇게 알린다.
 
     python -m harness.dots preview a_… fields.json   # 채운 요청서를 보기만 한다 (올리지 않음)
     python -m harness.dots delegate a_… fields.json  # 실제로 올린다
@@ -46,6 +47,7 @@ REQUEST_FILE = "request.md"
 SITE_URL = os.environ.get("MOCA_ACTIVITY_SITE_URL", "")   # 활동 사이트를 어디에 올릴지 정해지면 채운다
 UNDECIDED = "미정"
 DUE_DAYS = 3
+LOCAL = A.DATA / "dots"   # 보낸 요청서의 사본 (Drive 연결이 없을 때는 이것을 사람이 올린다)
 # 모임 소개 — 모카의 프롬프트(chatbot/agent.py base_prompt)에 쓰는 것과 같은 공개된 소개
 MOIM_INTRO = ("AI를 일과 일상에 들여놓는 방법을 나누고 AI와 함께하는 미래를 토론하며, "
               "에이전트(모카)를 중심으로 연결된 새로운 모임 형태를 실험하는 모임이야.")
@@ -247,7 +249,7 @@ def record(activity_id, meta, log=None):
     now = time.strftime(A.FMT)
     a["dots"] = {"request_id": meta["request_id"], "folder": meta["folder"],
                  "output_folder": meta["output_folder"], "requested_at": now, "due": meta["due"],
-                 "status": "requested"}
+                 "status": "requested", "upload": meta.get("upload")}
     a.setdefault("history", []).append({"at": now, "what": f"Dots에게 준비를 맡김 ({meta['request_id']})"})
     a["updated_at"] = now
     A.save(records)
@@ -262,9 +264,18 @@ def delegate(activity_id, program_id, fields, log=None, dry_run=False):
     text, meta = built
     if dry_run:
         return meta, None
-    problem = upload(text, meta)
-    if problem:
-        return None, problem
+    # 요청서는 Drive에 올리기 전에 항상 서버에도 남긴다. Drive 연결이 없으면 여기까지만 하고 사람이 올린다
+    saved = LOCAL / activity_id / REQUEST_FILE
+    saved.parent.mkdir(parents=True, exist_ok=True)
+    saved.write_text(text, encoding="utf-8")
+    meta["saved"] = str(saved)
+    if connected()[1]:
+        meta["upload"] = "manual"
+    else:
+        problem = upload(text, meta)
+        if problem:
+            return None, problem
+        meta["upload"] = "rclone"
     record(activity_id, meta, log)
     return meta, None
 
@@ -283,8 +294,10 @@ class Tools:
             return f"delegate_to_dots 실패: {problem}"
         if self.dry_run:
             return f"(dry-run) {activity_id}의 작업 요청서를 만들었습니다 ({meta['request_id']}). 올리지는 않았습니다"
-        return (f"delegate_to_dots 완료: {activity_id}의 작업 요청서({meta['request_id']})를 Drive "
-                f"{meta['folder']}/{REQUEST_FILE}에 올렸습니다. 마감 {meta['due']}. Dots가 소개글, 배너, 모임 공지 노트 "
+        where = (f"Drive {meta['folder']}/{REQUEST_FILE}에 올렸습니다" if meta["upload"] == "rclone" else
+                 f"만들었습니다. 서버에는 Drive 연결이 없어서 로하가 {meta['folder']}/{REQUEST_FILE}로 직접 올립니다")
+        return (f"delegate_to_dots 완료: {activity_id}의 작업 요청서({meta['request_id']})를 {where}. "
+                f"마감 {meta['due']}. Dots가 소개글, 배너, 모임 공지 노트 "
                 f"재료, 신청·체크인 웹사이트를 {meta['output_folder']}에 올립니다. 결과물을 가져오는 기능은 아직 없으니 "
                 "결과가 들어왔다고 가정하지 마세요")
 
