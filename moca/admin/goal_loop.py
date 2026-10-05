@@ -90,8 +90,12 @@ EXECUTOR_CATALOG = f"""- {{type: agent, name: chat_moca}}  모임 채팅에서 �
 - {{type: tool, name: delegate_to_dots}} (프로그램 모카만) 활동의 준비물을 Dots(외부 에이전트)에게 맡긴다 — 소개글, 배너, 모임 공지 노트 재료,
     신청·체크인 웹사이트. 활동의 진행 방식이 정해진 뒤에 쓴다. arguments_json: {{"activity_id", "activity_goal", "activity_audience",
     "activity_outline", "participant_prep"?, "duration"?, "fee"?, "signup_deadline"?, "checkin_deadline"?, "due"?}}
-    goal은 끝났을 때 참가자가 얻는 것, audience는 누구를 위한 활동인지, outline은 진행 순서(바깥 사람이 읽고 만들 수 있게).
-    이름·시간·장소·인원은 하네스가 활동 기록에서 채운다. 정해지지 않은 칸은 비워 두면 '미정'이 된다.
+    모든 칸은 활동 자체를 설명한다 — 그 활동에 올 참가자가 읽는다고 생각하고 써라. Dots에게 하는 말은 어느 칸에도 넣지 마라.
+    무엇을 만들지, 미정을 지어내지 말 것, 확인 안 된 것을 단정하지 말 것은 요청서가 이미 Dots에게 지시한다.
+    - activity_goal: 끝났을 때 참가자가 얻는 것. activity_audience: 누구를 위한 활동인지.
+    - activity_outline: 당일 진행 순서와 시간 (예: "시연 10분 → 각자 실행 25분 → 비교 15분"). '소개글·배너를 제작한다' 같은 준비 작업은 아니다.
+    - participant_prep: 참가자가 미리 해 올 것 (예: "노트북, 두 서비스에 가입한 계정"). 없으면 비워 둔다.
+    이름·종류·시간·장소·인원은 하네스가 활동 기록에서 채운다. 정해지지 않은 칸은 비워 두면 '미정'이 된다.
     요청서는 Google Drive와 다른 회사의 에이전트로 나간다 — 멤버 이름을 쓰지 말고 '진행자', '참가자'처럼 역할로 써라.
 - {{type: tool, name: open_program_signup}} (프로그램 모카만) 프로그램의 참가 등록 정모를 연다. arguments_json: {{"program_id", "post_title"}}
 - {{type: tool, name: finish_program}}   (운영 모카만) 프로그램을 끝낸다. arguments_json: {{"program_id", "status": "finished"|"dropped", "reason"}}
