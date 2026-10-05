@@ -239,10 +239,33 @@ class SomoimEvents:
         if picture is None:
             return True  # already has a photo (e.g. restored draft)
         self.ui.tap(picture)
-        root = self.ui.wait_for(lambda r: any((n.get("content-desc") or "").startswith("Photo taken") for n in r.iter("node")),
-                                timeout=15, windows=True)
+
+        def photos(r):
+            return any((n.get("content-desc") or "").startswith("Photo taken") for n in r.iter("node"))
+
+        def folders(r):  # Google Photos as the picker opens on 'Device folders' first (seen 2026-10-05)
+            return any(n.get("text") == "Device folders" for n in r.iter("node"))
+
+        root = self.ui.wait_for(lambda r: photos(r) or folders(r), timeout=15, windows=True)
+        if root is not None and not photos(root):
+            title = next((n for n in root.iter("node") if n.get("text") == "Pictures"), None)
+            y = bounds(title)[1] if title is not None else None
+            row = next((n for n in root.iter("node") if n.get("clickable") == "true" and y is not None
+                        and bounds(n)[1] <= y <= bounds(n)[3]), None)
+            if row is not None:
+                self.ui.tap(row)
+                root = self.ui.wait_for(photos, timeout=15, windows=True)
+            else:
+                root = None
         if root is None:
             self.log("사진 선택 화면이 열리지 않음")
+            # 사진 고르기 화면을 띄워 둔 채 끝나면 앱을 다시 앞으로 가져오지 못한다 (그날 밤 루프가 멈춘 이유):
+            # 고르기 화면과 쓰다 만 정모 양식을 닫고 나간다
+            for _ in range(3):
+                if first_id(self.ui.dump(), "explain_text") is not None:
+                    break
+                self.dev.adb("shell", "input", "keyevent", "4")
+                time.sleep(1.5)
             return False
         self.ui.tap(next(n for n in root.iter("node") if (n.get("content-desc") or "").startswith("Photo taken")))
         crop = self.ui.wait_for(lambda r: any((n.get("content-desc") or n.get("text")) == "Crop" for n in r.iter("node")),
