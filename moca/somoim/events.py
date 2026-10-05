@@ -183,18 +183,29 @@ class SomoimEvents:
                 self.dev.type_text(str(value))
                 time.sleep(0.6)
         wanted = "PM" if hour >= 12 else "AM"
-        for _ in range(3):
-            label = self._by_id("android:id/text1")
+
+        def dialog(root):  # the dialog itself, not the AM/PM list drawn over it
+            return any(n.get("resource-id") == "android:id/button1" for n in root.iter("node"))
+
+        for _ in range(4):
+            root = self.ui.dump(windows=True)
+            if not dialog(root):
+                # the AM/PM list is open. Its items carry the spinner's own id, and the current choice sits
+                # exactly over the spinner, so pick by text alone (2026-10-05: the old position test skipped it)
+                option = next((n for n in root.iter("node")
+                               if n.get("resource-id") == "android:id/text1" and _text(n) == wanted), None)
+                if option is None:
+                    return False
+                self.ui.tap(option)
+                time.sleep(1.0)
+                continue
+            label = next((n for n in root.iter("node") if n.get("resource-id") == "android:id/text1"), None)
             if label is None or _text(label) == wanted:
                 break
             self.ui.tap(label)  # AM/PM selector: either toggles or opens a two-item list
             time.sleep(1.2)
-            # the list items carry the same id as the spinner itself, so tell them apart by position
-            option = next((n for n in self.ui.dump(windows=True).iter("node")
-                           if _text(n) == wanted and bounds(n) != bounds(label)), None)
-            if option is not None:
-                self.ui.tap(option)
-                time.sleep(1.0)
+        else:
+            return False
         return self._confirm()
 
     # --- writing --------------------------------------------------------------------
