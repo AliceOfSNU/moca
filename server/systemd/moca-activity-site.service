@@ -24,7 +24,7 @@ ProtectControlGroups=true
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 ReadOnlyPaths=/opt/moca/activity-sites
 ReadWritePaths=/opt/moca/activity-data/a_20261005_6bfb
-InaccessiblePaths=/opt/moca/moca /opt/moca/dashboard /opt/moca/site-data /opt/moca/.env /opt/moca/site-env
+InaccessiblePaths=/opt/moca/moca /opt/moca/dashboard /opt/moca/site-data -/opt/moca/site-env
 
 [Install]
 WantedBy=multi-user.target
