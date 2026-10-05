@@ -88,13 +88,24 @@ class DirectChat(ChatScreen):
         else:
             self.log("  모임 멤버 검색창을 찾지 못함")
             return False
-        self.ui.tap(box)
-        time.sleep(1.5)
-        with self.dev.adb_keyboard():
-            self.dev.clear_text()
-            self.dev.type_text(self.member)
-        time.sleep(2.5)
-        root = self.ui.dump()
+        # 이름이 검색창에 들어갔는지 읽어 보고 들어가지 않았으면 다시 쓴다. 칸이 비면 결과도 비고, 그러면
+        # 멀쩡히 있는 멤버가 "멤버 검색 결과가 0명"으로 남는다 — 최윤서가 탈퇴한 것처럼 보였던 것이 그것이다.
+        # 채팅 입력칸과 같은 이유로(somoim/chat.py _send_one) 가끔 초점을 잃는다.
+        for attempt in range(1, 4):
+            self.ui.tap(box)
+            time.sleep(1.5)
+            with self.dev.adb_keyboard():
+                self.dev.clear_text()
+                self.dev.type_text(self.member)
+            time.sleep(2.5)
+            root = self.ui.dump()
+            box = first_id(root, "search_searchedit") or box
+            typed = (box.get("text") or "").strip()
+            if typed == self.member:
+                break
+            self.log(f"  검색창 입력 확인 실패 ({attempt}/3): {typed!r}")
+        else:
+            return False
         hits = [n for n in root.iter("node") if rid(n) == "name_text" and n.get("text") == self.member]
         if len(hits) != 1:
             self.log(f"  멤버 검색 결과가 {len(hits)}명: '{self.member}'")  # 0 = not a member, 2+ = duplicate names
