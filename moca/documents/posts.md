@@ -1,7 +1,7 @@
 ### Writing a Post
 Operator-requested only: 모카 never writes a post because a member asked.
 
-- `python -m chatbot.post --category 가입인사 "요청"` — 모카 (GPT-6 Sol, `post_prompt()`) drafts a title (≤40 chars) and body
+- `python -m chatbot.post --category 가입인사 "요청"` — 모카 (GPT-6.1 Sol, `post_prompt()`) drafts a title (≤40 chars) and body
   from the request, the profile and `moca_capabilities.md`. The draft is saved to `data/posts/<timestamp>.json` and shown;
   it's published only after confirmation (`--yes` skips the prompt).
 - `--dry-run` fills the write screen, verifies title/body/category from the UI tree, then clears it and leaves.

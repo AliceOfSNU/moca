@@ -1,4 +1,4 @@
-"""Minimal computer-use loop: GPT-6 Sol drives the 소모임 app on an Android emulator via ADB.
+"""Minimal computer-use loop: GPT-6.1 Sol drives the 소모임 app on an Android emulator via ADB.
 
 Usage (from the moca/ directory):
     python -m cua.agent "task description"            # asks you in the terminal before submitting
@@ -17,7 +17,7 @@ from openai import OpenAI
 from cua.android import AndroidDevice
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-MODEL = "gpt-6-sol"
+MODEL = "gpt-6.1-sol"
 
 SYSTEM = """당신은 '모카'(MoCA)의 실행 도구입니다. 안드로이드 휴대폰 화면을 computer 도구로 조작해 '소모임' 앱에서 주어진 작업을 수행합니다.
 

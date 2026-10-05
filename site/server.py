@@ -28,7 +28,7 @@ STATIC = HERE
 DATA = pathlib.Path(os.environ.get("SITE_DATA") or (HERE.parent / "site-data"))
 STORE = DATA / "checkins.json"
 
-MODEL = os.environ.get("SITE_MODEL", "gpt-6-sol")
+MODEL = os.environ.get("SITE_MODEL", "gpt-6.1-sol")
 KEYWORDS_PER_TOPIC = (2, 3)
 KEYWORD_LIMIT = 12          # 12자 이하 (website.md)
 MAX_TOPICS = 2              # 한 사람이 올릴 수 있는 '한 줄 주제'
