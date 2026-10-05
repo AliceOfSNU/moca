@@ -110,9 +110,9 @@ def harness_values(activity, program, request_id, due):
     """하네스가 기록에서 채우는 칸. 모델은 이 값을 건드리지 않는다."""
     from chatbot.config import MOIM_NAME
     size = ((program.get("users") or {}).get("size") or {}).get("max")
-    kind = activity.get("activity_type") or UNDECIDED
+    kind = A.kind(activity)   # 바깥 사람이 읽는 글이라 코드(hands_on, either)가 아니라 이름으로
     if activity.get("mode"):
-        kind += f" · {'온라인' if activity['mode'] == 'online' else '오프라인' if activity['mode'] == 'offline' else activity['mode']}"
+        kind += f" · {A.MODE_LABELS.get(activity['mode'], activity['mode'])}"
     return {
         "request_id": request_id,
         "requested_at": time.strftime("%Y-%m-%d %H:%M"),
@@ -219,7 +219,7 @@ def connected():
     exe = rclone()
     if exe is None:
         return None, "Drive 연결이 없습니다 (rclone이 설치되지 않음)"
-    r = subprocess.run([exe, "listremotes"], capture_output=True, text=True)
+    r = subprocess.run([exe, "listremotes"], capture_output=True, text=True, encoding="utf-8", errors="replace")
     if f"{REMOTE}:" not in r.stdout.split():
         return None, f"Drive 연결이 없습니다 (rclone에 '{REMOTE}' 원격이 없음)"
     return exe, None
@@ -231,13 +231,13 @@ def upload(text, meta):
         return problem
     target = f"{REMOTE}:{meta['folder']}/{REQUEST_FILE}"
     exists = subprocess.run([exe, "lsf", f"{REMOTE}:{meta['folder']}", "--include", REQUEST_FILE],
-                            capture_output=True, text=True)
+                            capture_output=True, text=True, encoding="utf-8", errors="replace")
     if REQUEST_FILE in exists.stdout.split():
         return f"Drive에 이미 요청서가 있습니다: {meta['folder']}/{REQUEST_FILE} — 덮어쓰지 않습니다"
     with tempfile.TemporaryDirectory() as tmp:
         path = pathlib.Path(tmp) / REQUEST_FILE
-        path.write_text(text, encoding="utf-8")
-        r = subprocess.run([exe, "copyto", str(path), target, "-q"], capture_output=True, text=True)
+        path.write_text(text, encoding="utf-8", newline="\n")   # 윈도에서 올려도 CRLF가 되지 않게
+        r = subprocess.run([exe, "copyto", str(path), target, "-q"], capture_output=True, text=True, encoding="utf-8", errors="replace")
     if r.returncode != 0:
         return f"Drive에 올리지 못했습니다: {(r.stderr or '').strip()[:200]}"
     return None
@@ -267,7 +267,7 @@ def delegate(activity_id, program_id, fields, log=None, dry_run=False):
     # 요청서는 Drive에 올리기 전에 항상 서버에도 남긴다. Drive 연결이 없으면 여기까지만 하고 사람이 올린다
     saved = LOCAL / activity_id / REQUEST_FILE
     saved.parent.mkdir(parents=True, exist_ok=True)
-    saved.write_text(text, encoding="utf-8")
+    saved.write_text(text, encoding="utf-8", newline="\n")
     meta["saved"] = str(saved)
     if connected()[1]:
         meta["upload"] = "manual"
