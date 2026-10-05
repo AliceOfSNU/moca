@@ -1,0 +1,30 @@
+[Unit]
+Description=활동 신청·체크인 사이트 — Dots로 레스토랑 경영하기 (인터넷에 공개, 포트 8080)
+After=network-online.target
+
+[Service]
+Type=simple
+# 루트로 돌리지 않는다. 8080은 권한 없이 열 수 있다.
+User=www-data
+Group=www-data
+NoNewPrivileges=true
+WorkingDirectory=/opt/moca/activity-sites/a_20261005_6bfb/website
+Environment=PYTHONIOENCODING=utf-8
+# Dots가 만든 서버 (표준 라이브러리만). 답변은 웹 폴더 밖의 비공개 폴더에만 쓴다.
+ExecStart=/opt/moca/.venv/bin/python /opt/moca/activity-sites/a_20261005_6bfb/website/server.py --host 0.0.0.0 --port 8080 --origin http://116.125.140.19:8080 --data /opt/moca/activity-data/a_20261005_6bfb --config /opt/moca/activity-sites/a_20261005_6bfb/event.json
+Restart=always
+RestartSec=10
+
+# 인터넷에 열린 프로세스는 멤버 기록과 대시보드를 아예 볼 수 없어야 한다 (moca-site.service와 같은 이유).
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadOnlyPaths=/opt/moca/activity-sites
+ReadWritePaths=/opt/moca/activity-data/a_20261005_6bfb
+InaccessiblePaths=/opt/moca/moca /opt/moca/dashboard /opt/moca/site-data /opt/moca/.env /opt/moca/site-env
+
+[Install]
+WantedBy=multi-user.target
