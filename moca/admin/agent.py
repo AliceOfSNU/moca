@@ -156,7 +156,10 @@ class EventTools:
             at = dt.datetime.strptime(when, "%Y-%m-%d %H:%M")
         except (TypeError, ValueError):
             return "when은 'YYYY-MM-DD HH:MM' 형식이어야 합니다"
-        capacity, expense = int(capacity), int(expense)
+        try:
+            capacity, expense = int(capacity), int(expense)
+        except (TypeError, ValueError):  # '6000원'처럼 단위를 붙이면 회차 전체가 오류로 끝났다 (2026-10-05)
+            return "capacity와 expense는 숫자만 쓴다 (예: capacity 8, expense 6000 — '명'·'원' 없이)"
         plan = {"purpose": purpose, "mode": mode, "topic": topic, "format": format, "format_note": format_note}
         problem = check_create(name, at, location, capacity, expense) or check_plan(plan, location)
         if not problem:  # every 정모 is one activity of a program, with its open questions settled

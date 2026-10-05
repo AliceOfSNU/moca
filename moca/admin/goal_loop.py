@@ -101,7 +101,7 @@ EXECUTOR_CATALOG = f"""- {{type: agent, name: chat_moca}}  모임 채팅에서 �
 - {{type: tool, name: finish_program}}   (운영 모카만) 프로그램을 끝낸다. arguments_json: {{"program_id", "status": "finished"|"dropped", "reason"}}
     finished는 목적을 이뤘을 때, dropped는 그만둘 때. 담당 모카의 목표와 기획 중이던 활동도 함께 정리된다.
 - {{type: tool, name: create_event}}     정모 만들기 (활동 하나를 실제 정모로). arguments_json: {{"name", "when": "YYYY-MM-DD HH:MM", "location", "post_title",
-                                                                   "activity_id", "capacity"?, "expense"?,
+                                                                   "activity_id", "capacity"?(숫자), "expense"?(원, 숫자만),
                                                                    "purpose", "mode": "offline"|"online"|"hybrid", "topic",
                                                                    "format": "talk"|"discussion"|"workshop"|"cowork"|"social", "format_note"?}}
 - {{type: tool, name: edit_event}}       모카가 만든 정모의 앱 항목이나 계획 수정. arguments_json: {{"name", "new_name"?, "location"?, "capacity"?, "expense"?,
