@@ -54,7 +54,7 @@
   async function load() {
     let data;
     try {
-      const r = await fetch("/api/public", { cache: "no-store" });
+      const r = await fetch("api/public", { cache: "no-store" });
       if (!r.ok) return;
       data = await r.json();
     } catch { return; }
@@ -76,6 +76,5 @@
     };
   }
 
-  load();
-  setInterval(load, 30000);   // 당일에 체크인이 들어오면 새로고침 없이 따라붙는다
+  load();   // 지난 활동: 명단은 행사 뒤에 떠 둔 그대로다 (home/server.py)
 })();

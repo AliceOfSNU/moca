@@ -1,0 +1,33 @@
+[Unit]
+Description=모카의 홈페이지 (모카의 방) + 지난 커피챗 페이지 /coffee-chat/ (인터넷에 공개, 포트 80)
+After=network-online.target
+
+[Service]
+Type=simple
+# 루트로 돌리지 않는다. 80번을 열 수 있는 권한만 따로 준다.
+User=www-data
+Group=www-data
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+WorkingDirectory=/opt/moca/home
+Environment=PYTHONIOENCODING=utf-8
+# 커피챗 체크인 서버(moca-site)를 내리기 전에 떠 둔 공개 명단. 체크인 원본(site-data)은 이 프로세스가 볼 수 없다.
+Environment=HOME_COFFEE_JSON=/opt/moca/home-data/coffee-chat.json
+# OPENAI_API_KEY만 들어 있다. 모카의 .env는 이 프로세스에 보이지 않는다.
+EnvironmentFile=/opt/moca/site-env
+ExecStart=/opt/moca/.venv/bin/python /opt/moca/home/server.py --port 80 --bind 0.0.0.0
+Restart=always
+RestartSec=10
+
+# 인터넷에 열린 프로세스는 멤버 기록과 대시보드를 아예 볼 수 없어야 한다. 쓰는 곳은 없다 — 방문자의 말은 저장하지 않는다.
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadOnlyPaths=/opt/moca/home /opt/moca/site /opt/moca/home-data
+InaccessiblePaths=/opt/moca/moca /opt/moca/dashboard /opt/moca/site-data /opt/moca/activity-data
+
+[Install]
+WantedBy=multi-user.target
