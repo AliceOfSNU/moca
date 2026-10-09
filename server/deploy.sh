@@ -40,6 +40,16 @@ fi
 echo "$before → $after"
 git --no-pager log --oneline "$before..$after"
 
-systemctl restart moca-loop
-sleep 4
-systemctl is-active moca-loop
+# 바뀐 코드를 쓰는 서비스만 다시 띄운다. 예전에는 루프만 다시 띄워서, 대시보드가 sqlite로 옮기기 전의 코드로
+# 일주일을 돌며 옛 JSON 파일에 가설을 썼다 (2026-10-09). 사이트만 바뀐 배포가 루프의 회차를 끊지도 않게.
+changed=$(git diff --name-only "$before" "$after")
+restart() {
+  systemctl restart "$1"
+  sleep 3
+  echo "$1: $(systemctl is-active "$1")"
+}
+echo "$changed" | grep -q '^moca/' && restart moca-loop
+echo "$changed" | grep -q '^dashboard/' && restart moca-dashboard
+echo "$changed" | grep -qE '^(home|site)/' && restart moca-home
+echo "$changed" | grep -q '^activity-sites/' && restart moca-activity-site
+exit 0
