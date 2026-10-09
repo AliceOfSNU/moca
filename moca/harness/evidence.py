@@ -6,8 +6,9 @@ visible knowledge (the backfill). The reviewer picks the records that bear on th
 strongly, and proposes a status. The harness decides what sticks:
 
 - evidence is a pointer to a knowledge record, never free text: {ref, direction, weight, note, at};
-- only `reported` or `observed` knowledge counts — never 모카's own inferences — and never the records the
-  hypothesis was created from (its grounds), or it would support itself;
+- only `reported` or `observed` knowledge counts — never 모카's own inferences. A hypothesis 모카 wrote never
+  counts the records it was created from (its grounds), or it would confirm its own inference; one 로하 wrote
+  (grounds.source == "developer") does — those are member reports 로하 judged by hand (decided 2026-10-09);
 - records from the same source (one post, one vote, one 정모's sign-ups, one member's intro or notes, one chat
   task answer, one day of chat) count as one piece of evidence, so "five members said it" and "one member
   said it five ways" stay different;
@@ -147,9 +148,11 @@ def _hypothesis_text(h, visible):
 
 def _candidates(h, visible):
     """Knowledge this hypothesis hasn't been checked against: everything visible the first time, afterwards
-    only what arrived since. Never its own grounds, never 모카's inferences, never what's already linked."""
+    only what arrived since. Never 모카's inferences, never what's already linked, and never its own grounds
+    unless 로하 wrote it."""
     since = h.get("reviewed_until")
-    skip = set(h["grounds"].get("knowledge", [])) | {e["ref"] for e in h.get("evidence", [])}
+    own = set() if h["grounds"].get("source") == "developer" else set(h["grounds"].get("knowledge", []))
+    skip = own | {e["ref"] for e in h.get("evidence", [])}
     out = [k for k in visible.values()
            if k["basis"] in knowledge.GROUNDING and k["id"] not in skip and (since is None or k["created_at"] > since)]
     if len(out) > MAX_CANDIDATES:
