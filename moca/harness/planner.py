@@ -51,7 +51,8 @@ ACTIVITY_TYPES = {"individual_study": "각자 스터디", "presentation": "발�
                   "discussion": "토론", "show_and_tell": "결과물 공유", "clinic": "질문·상담",
                   "collab_project": "함께 만들기", "social": "친목", "other": "기타"}
 MODES = {"offline": "오프라인", "online": "온라인", "either": "둘 다"}
-FILL_BY = {"volunteer": "희망자를 모집", "vote": "투표로 정함", "moca": "모카가 정함", "fixed": "템플릿에 고정"}
+FILL_BY = {"volunteer": "희망자를 모집", "vote": "투표로 정함", "moca": "모카가 정함", "fixed": "템플릿에 고정",
+           "later": "참가자가 나중에 정함"}   # fixed·later: how가 곧 기록될 값 (harness/activities.py _slots)
 WHO = {"member_volunteer": "맡겠다는 멤버", "all_participants": "참가자 모두", "moca": "모카"}
 PHASES = {"before": "정모 전", "during": "정모 중", "after": "정모 후"}
 
@@ -110,8 +111,12 @@ COMMON = """너는 모카야. 소모임 '{moim}'를 운영하는 AI 운영진이
 ## 사람에 대한 규칙
 - 멤버를 이름으로 적지 마. 템플릿 어디에도 멤버 이름이 들어가면 안 된다.
 - 누가 발표할지, 무슨 주제인지, 어디서 할지처럼 사람이나 그때그때 정해질 것은 슬롯(slots)으로 남기고, 어떻게 채울지
-  (fill_by: volunteer=희망자 모집, vote=투표, moca=모카가 정함, fixed=고정)와 방법(how), 안 채워질 때의 대안(fallback)을
-  적어. 멤버가 무엇을 하는 사람인지 안다고 해서 그 멤버에게 발표나 역할을 정해 주면 안 된다. 물어보고 정한다.
+  (fill_by: volunteer=희망자 모집, vote=투표, moca=모카가 정함, fixed=고정, later=참가자가 나중에 정함)와 방법(how),
+  안 채워질 때의 대안(fallback)을 적어. 멤버가 무엇을 하는 사람인지 안다고 해서 그 멤버에게 발표나 역할을 정해 주면
+  안 된다. 물어보고 정한다.
+- fixed는 기획에서 이미 정해진 것(예: 시간), later는 정모를 연 뒤 신청한 사람들이 정할 것(예: 어느 카페, 현장 진행 담당)이다.
+  이 둘은 how에 활동 기록에 그대로 적힐 값을 짧게 써라(예: '19:30–22:00', '카페는 신청자 투표로 정함'). 정모를 여는 데
+  걸림돌이 되지 않는다. 신청자가 생기기 전에는 정할 수 없는 것을 vote·volunteer로 두면 정모를 영영 열 수 없다.
 - 모카는 AI라서 오프라인은 물론 온라인 정모에도 참석할 수 없어. 모카의 일은 정모 전과 후(모집, 안내, 알림, 끝난
   뒤 확인)뿐이다. 정모 자체는 멤버가 진행한다.
 - 활동 종류: individual_study(각자 스터디), presentation(정해진 발표자), hands_on(진행자와 함께하는 실습),

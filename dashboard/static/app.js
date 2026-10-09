@@ -433,7 +433,7 @@ function progBody(d) {
 const activityLabel = { individual_study: "각자 스터디", presentation: "발표", hands_on: "실습", discussion: "토론",
   show_and_tell: "결과물 공유", clinic: "질문·상담", collab_project: "함께 만들기", social: "친목", other: "기타" };
 const modeLabel = { offline: "오프라인", online: "온라인", either: "온·오프라인" };
-const fillLabel = { volunteer: "희망자 모집", vote: "투표", moca: "모카가 정함", fixed: "고정" };
+const fillLabel = { volunteer: "희망자 모집", vote: "투표", moca: "모카가 정함", fixed: "고정", later: "참가자가 나중에 정함" };
 const whoLabel = { member_volunteer: "맡은 멤버", all_participants: "참가자 모두", moca: "모카" };
 const phaseLabel = { before: "전", during: "중", after: "후" };
 const typeOf = (x) => x.activity_type === "other" ? (x.type_label || "기타") : activityLabel[x.activity_type] || x.activity_type;

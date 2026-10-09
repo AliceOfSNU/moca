@@ -75,9 +75,17 @@ def _now():
     return time.strftime(FMT)
 
 
+PREFILLED = {"fixed": "기획에서 정함", "later": "기획에서 정함: 정모를 연 뒤 신청자들이 정한다"}
+
+
 def _slots(plan_slots):
+    """The plan's open questions, unanswered — except fixed and later ones, whose how is the answer to record
+    (the time the plan set; '카페는 신청자 투표로'). Those never block the 정모."""
+    now = _now()
     return [{"name": s["name"], "fill_by": s["fill_by"], "how": s["how"], "fallback": s.get("fallback"),
-             "value": None, "note": None, "decided_at": None} for s in plan_slots or []]
+             "value": s["how"][:LIMITS["value"]] if s["fill_by"] in PREFILLED else None,
+             "note": PREFILLED.get(s["fill_by"]), "decided_at": now if s["fill_by"] in PREFILLED else None}
+            for s in plan_slots or []]
 
 
 def draft(program_id, log=None):
