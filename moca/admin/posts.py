@@ -18,7 +18,7 @@ from chatbot.store import DATA_ROOT
 BOARD = DATA_ROOT / "board"
 ACTIONS = BOARD / "actions.jsonl"
 CATEGORY = "모임후기"       # 정모 글을 한곳에 모으려고 고른 칸. 후기만 쓰는 곳은 아니다
-MAX_PER_DAY = 2
+MAX_PER_DAY = 3
 TITLE_LIMIT, BODY_LIMIT = 40, 2000
 
 
