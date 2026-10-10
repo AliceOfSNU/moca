@@ -104,6 +104,34 @@ CREATE INDEX IF NOT EXISTS hypothesis_evidence_k ON hypothesis_evidence(knowledg
 CREATE VIEW IF NOT EXISTS members_of AS
   SELECT k.id AS knowledge_id, j.value AS member, j.key AS position
   FROM knowledge k, json_each(k.subjects) j;
+
+-- 모카가 먼저 묻는 질문 (harness/asks.py). 만들기만 하고 보내지 않은 것(held, rejected)도 남긴다:
+-- 한 시간대에 한 번만 만들고, 왜 안 물었는지도 나중에 볼 수 있게. 선택지는 보낸 그대로 남겨야 "2"가
+-- 무엇이었는지 안다.
+CREATE TABLE IF NOT EXISTS questions (
+  id            TEXT PRIMARY KEY,
+  member        TEXT NOT NULL,
+  slot          TEXT NOT NULL,              -- 출근길 | 퇴근길 | 지금(손으로 보낸 것)
+  kind          TEXT NOT NULL DEFAULT 'explore',
+  status        TEXT NOT NULL,              -- held | rejected | ready | sent | failed | blocked | answered | expired
+  axis          TEXT, target TEXT, why TEXT, message TEXT,
+  choices       TEXT NOT NULL DEFAULT '[]', -- JSON, 번호 순서대로
+  multi         INTEGER NOT NULL DEFAULT 0,
+  reads_as      TEXT, does_not_mean TEXT, hold_reason TEXT,
+  problems      TEXT NOT NULL DEFAULT '[]', -- JSON: 하네스가 거른 이유, 보내기 직전 막힌 이유
+  sent_text     TEXT,                       -- 멤버가 실제로 받은 글 그대로
+  created_at    TEXT NOT NULL, sent_at TEXT, expires_at TEXT, answered_at TEXT,
+  answer        TEXT                        -- 질문 뒤 멤버가 처음 보낸 말 그대로 (해석은 다음 단계)
+);
+CREATE INDEX IF NOT EXISTS questions_member ON questions(member, created_at);
+CREATE INDEX IF NOT EXISTS questions_status ON questions(status);
+
+-- /ask off|on. 행이 없으면 켜진 것.
+CREATE TABLE IF NOT EXISTS ask_prefs (
+  member     TEXT PRIMARY KEY,
+  enabled    INTEGER NOT NULL,
+  changed_at TEXT NOT NULL
+);
 """
 
 

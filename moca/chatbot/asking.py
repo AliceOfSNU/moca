@@ -11,12 +11,13 @@
 모델은 **묻지 않기로** 할 수도 있다(ask=false). 지금 이 사람에게 할 만한 질문이 없으면 보내지 않는 것이
 지침이고(asking.md), 그 선택지가 스키마에 없으면 모델은 늘 무언가를 만들어 낸다.
 
-지금은 만들어 보기만 한다. 보내지 않는다.
+이 파일은 만들기만 한다. 언제 누구에게 보낼지는 harness/asks.py, 실제로 보내는 것은 chatbot/asking_send.py.
 
     python -m chatbot.asking 김범진 최윤서             # 멤버마다 질문 하나씩
     python -m chatbot.asking 로하 --n 3 --slot 퇴근길  # 같은 멤버로 세 번 — 얼마나 흔들리는지 본다
 """
 import argparse
+import difflib
 import json
 import pathlib
 import re
@@ -121,6 +122,22 @@ def known_block(member):
     return "## 모임에서 이미 알려진 것 (가입인사, 모임 채팅, 정모 신청 등)\n" + "\n".join(lines)
 
 
+def asked_block(member):
+    """이 멤버에게 실제로 보낸 질문과 그 답. 같은 걸 또 묻지 않게."""
+    from harness import asks
+    sent = asks.recent(member)
+    if not sent:
+        return "## 이 멤버에게 최근 먼저 물은 질문\n(아직 없음)"
+    lines = []
+    for q in sent:
+        opts = " / ".join(f"{i}) {c}" for i, c in enumerate(q["choices"], 1))
+        got = (f"답: {q['answer']}" if q["status"] == "answered"
+               else "답 없음" if q["status"] == "expired" else "답 기다리는 중")
+        lines.append(f"- [{q['sent_at'][:10]} · {q['axis']}] {q['message']} ({opts}) — {got}")
+    return ("## 이 멤버에게 최근 먼저 물은 질문 (같은 것을 다시 묻지 마. 답이 없었던 질문을 바로 다시 내밀지도 마)\n"
+            + "\n".join(lines))
+
+
 def build(member, slot):
     from chatbot.dm import dm_prompt, format_line, member_dir
     from chatbot.store import ChatStore
@@ -130,7 +147,7 @@ def build(member, slot):
     history = ChatStore(member_dir(member)).history(HISTORY)
     convo = ("## 1:1 대화 기록 (오래된 순, 최근 %d개)\n" % HISTORY
              + ("\n".join(format_line(m) for m in history) if history else "(아직 없음)"))
-    asked = "## 이 멤버에게 최근 먼저 물은 질문\n(아직 없음)"   # 보내는 층이 생기면 여기에 채운다
+    asked = asked_block(member)
     now = f"## 지금\n{today()} {slot} 시간대"
     return instructions, "\n\n".join([known_block(member), convo, asked, now])
 
@@ -143,8 +160,9 @@ def draft(agent, member, slot="출근길"):
     return json.loads(resp.output_text)
 
 
-def problems(q):
-    """하네스가 보내기 전에 거르는 것. 모델이 지침을 읽었다고 지켰다는 보장은 없다."""
+def problems(q, previous=()):
+    """하네스가 보내기 전에 거르는 것. 모델이 지침을 읽었다고 지켰다는 보장은 없다.
+    `previous`: 이 멤버에게 이미 보낸 질문 문장들 — 거의 같은 질문은 거른다."""
     if not q["ask"]:
         return [] if q["hold_reason"].strip() else ["묻지 않는다면서 이유가 없음"]
     out = []
@@ -171,6 +189,9 @@ def problems(q):
         out.append(f"물음표가 {msg.count('?')}개 — 질문이 둘일 수 있음")
     if re.search(r"\(?\d\)", msg):
         out.append("질문 문장 안에 번호 선택지가 섞임")
+    same = next((p for p in previous if p and difflib.SequenceMatcher(None, msg, p).ratio() >= 0.8), None)
+    if same:
+        out.append(f"전에 보낸 질문과 거의 같음: {same[:30]}…")
     hits = [w for w in SENSITIVE if w in msg + " ".join(q["choices"])]
     if hits:
         out.append(f"민감할 수 있는 말: {hits}")

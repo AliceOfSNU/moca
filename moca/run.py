@@ -23,7 +23,7 @@ from admin.votes import finish_vote_tasks, sync_votes
 from admin.goal_loop import GoalLoop
 from chatbot.config import DEVELOPER
 from admin.program_agent import spawn_due as _spawn_due
-from harness import activities, devmail, programs, evidence, planner, post_facts, sources, stardust, tasks
+from harness import activities, asks, devmail, programs, evidence, planner, post_facts, sources, stardust, tasks
 from harness.goals import focus as goals_due
 from chatbot.agent import ACCOUNT_NAME, ChatAgent, answerable, format_line, is_call, secret
 from chatbot.dm import (DMAgent, ask_memory_scope, converse, greet_newcomers, has_consented, load_consent,
@@ -339,6 +339,9 @@ def session(args, dev, chat, store, agent, dm_agent, client, work):
     if work["memory"]:
         presence.activity("memory")
         memory_session(args, chat, dm_agent)
+    if work.get("asking"):
+        presence.activity("dm")
+        asking_session(args, chat, dm_agent)
     if work["post"]:
         presence.activity("post")
         post_session(args, chat, dm_agent)
@@ -358,7 +361,25 @@ ADMIN_TICK = {"date": None}  # the day 운영 모카 last ran in this process
 
 def no_work():
     return {"chat": False, "post": False, "inbox": False, "dm": set(), "admin": False, "memory": False,
-            "dm_task": False}
+            "dm_task": False, "asking": False}
+
+
+def asking_due(args):
+    """먼저 묻기: --asking일 때만, 출퇴근 시간대에 물어도 되는 멤버가 있으면 (harness/asks.py)."""
+    if not args.asking or args.dry_run:
+        return False
+    try:
+        return bool(asks.due())
+    except Exception as e:                       # 묻기가 고장 나도 루프는 계속 돈다
+        log(f"먼저 묻기 확인 실패: {type(e).__name__}: {e}")
+        return False
+
+
+def asking_session(args, chat, dm_agent):
+    from chatbot.asking_send import ask_round
+    log("먼저 묻기 (출퇴근 시간대)")
+    done = ask_round(chat, dm_agent, log)
+    log(f"  먼저 묻기: {', '.join(f'{m} {s}' for m, s in done) or '물을 사람 없음'}")
 
 
 def everything():
@@ -406,6 +427,8 @@ def wait_for_trigger(args, watcher, chat, last_cycle):
     while True:
         if memory_due(args):
             return "기억 활용 범위 질문", dict(no_work(), memory=True)
+        if asking_due(args) and time.time() - last_cycle >= args.min_gap:
+            return "먼저 묻기 시간대", dict(no_work(), asking=True)
         # a task waiting for its opening question, or past its deadline and waiting for its report
         if not args.dry_run and task_needs_chat() and time.time() - last_cycle >= args.min_gap:
             return "운영 작업", dict(no_work(), chat=True)
@@ -458,6 +481,8 @@ def main():
     ap.add_argument("--memory-hour", type=int, default=9,
                     help="hour of the day (0-23) after which 모카 asks members the 기억 활용 범위 question")
     ap.add_argument("--no-memory-ask", action="store_true", help="never ask the 기억 활용 범위 question")
+    ap.add_argument("--asking", action="store_true",
+                    help="send scheduled 1:1 questions in the commute windows (harness/asks.py); off by default")
     ap.add_argument("--admin-hour", type=int, default=10,
                     help="hour of the day (0-23) after which 운영 모카 does its daily 정모 round")
     ap.add_argument("--no-admin", action="store_true", help="skip the daily 운영 모카 round")
@@ -485,11 +510,11 @@ def main():
     watcher = None if args.once else NotificationWatcher(dev, log=log)
     reason, work = "시작", dict(everything(), admin=admin_due(args) or bool(goals_due()) or bool(tasks.vote_due()),
                               daily=admin_due(args),
-                              memory=memory_due(args))
+                              memory=memory_due(args), asking=asking_due(args))
     retried = False
     while True:
         log(f"── 회차 시작 ({reason}: "
-            f"{', '.join(k for k in ('chat', 'post', 'inbox', 'admin', 'memory', 'dm_task') if work.get(k)) or ''}"
+            f"{', '.join(k for k in ('chat', 'post', 'inbox', 'admin', 'memory', 'dm_task', 'asking') if work.get(k)) or ''}"
             f"{' dm=' + ','.join(work['dm']) if work['dm'] else ''})")
         cycle_started = time.time()
         chat_read = None

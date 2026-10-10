@@ -24,7 +24,7 @@ from chatbot.memory_consent import (ask_prompt, awaiting, classify, due, mark_as
 from chatbot.post_tools import POST_SEARCH_RULES, create_with_post_tools
 from chatbot.store import DATA_ROOT, ROOT, ChatStore
 from chatbot import tips
-from harness import devmail, stardust
+from harness import asks, devmail, stardust
 from harness.presence import status_block
 from cua.agent import openai_client
 from cua.android import AndroidDevice
@@ -56,7 +56,9 @@ def dm_prompt(member):
 - 기능 문서에 없는 일을 요청받으면 아직 그 기능이 없다고 안내해. 운영 관련 요청(신고, 건의 등)은 네가 직접 받아 두고, 앱에서 모임장 계정만 할 수 있는 조치는 로하가 대신 실행한다고 안내해.
 - 기록과 개인정보에 대해 물으면 기능 문서에 적힌 대로 정확하게 답해.
 - 멤버가 자기에 대해 무엇을 기억하는지 궁금해하거나 활용 범위를 바꾸고 싶어 하면, '/memory'로 확인하고
-  '/memory on' · '/memory off'로 모임 운영 활용을 켜고 끌 수 있다고 알려 줘."""         + POST_SEARCH_RULES + RECORDING_RULES + notes_block(member, sharing=shares(member)) + own_block(member) + plans_block() + stardust.member_block(member) + status_block()
+  '/memory on' · '/memory off'로 모임 운영 활용을 켜고 끌 수 있다고 알려 줘.
+- 모카가 출퇴근길에 먼저 보내는 질문이 부담스럽거나 그만 받고 싶다고 하면, '/ask off'로 끄고 '/ask on'으로
+  다시 켤 수 있다고 알려 줘. 대신 끄지는 마 — 멤버가 직접 입력해야 한다."""         + POST_SEARCH_RULES + RECORDING_RULES + notes_block(member, sharing=shares(member)) + own_block(member) + plans_block() + stardust.member_block(member) + status_block()
 
 
 def member_dir(member):
@@ -301,6 +303,25 @@ def ask_memory_scope(chat, agent, log, dry_run=False):
     return asked
 
 
+def answer_turn(member, new_msgs, log, dry_run=False):
+    """모카가 먼저 보낸 질문에 답이 오는 중이면: 답 원문을 그 질문에 붙이고(harness/asks.py), 1:1 모카에게
+    무엇을 물었는지 알려 준다 — "2"만 와도 무슨 뜻인지 알게. 답의 해석과 지식 기록은 다음 단계다."""
+    q = asks.open_question(member)
+    if q is None or not new_msgs:
+        return None
+    answer = " / ".join(m["text"] for m in new_msgs if m.get("text"))
+    log(f"{member}님이 먼저 물은 질문({q['id']})에 답함: {answer[:80]}")
+    if not dry_run:
+        asks.mark_answered(q["id"], answer)
+    opts = "\n".join(f"{i}) {c}" for i, c in enumerate(q["choices"], 1))
+    return (f"조금 전 네가 이 멤버에게 먼저 보낸 질문이 있고, 방금 온 말은 그 답일 가능성이 커.\n"
+            f"보낸 질문: {q['message']}\n{opts}" + ("\n(여러 개 골라도 되는 질문)" if q["multi"] else "") + "\n"
+            "번호만 왔다면 그 번호의 선택지로 이해해. 답에 짧고 따뜻하게 반응해. 같은 주제로 자연스러운 후속 질문 "
+            "하나는 해도 되지만, 새 주제의 질문은 꺼내지 마. 이 답으로 그 사람을 넘겨짚지 마"
+            + (f" — {q['does_not_mean']}" if q.get("does_not_mean") else ".") +
+            "\n답이 질문과 상관없는 이야기라면 그 이야기에 답하고, 질문을 다시 묻지는 마.")
+
+
 def converse(dm, agent, log, dry_run=False, open_profile=None):
     """Read new messages in a 1:1 conversation and answer if the member spoke last (after the consent gate).
     Returns True if a message was sent."""
@@ -357,6 +378,21 @@ def converse(dm, agent, log, dry_run=False, open_profile=None):
             store.mark_answered(unanswered)
         sent = dm.send("\n".join(replies), dry_run=dry_run)
         return bool(sent) and not dry_run
+    ask_cmd = next((c for m in reversed(unanswered) if (c := asks.parse_command(m["text"]))), None)
+    if ask_cmd:
+        # 먼저 묻기 끄고 켜기는 하네스가 바로 처리하고 답한다 (harness/asks.py) — 모델이 정하지 않는다
+        if ask_cmd in ("on", "off") and not dry_run:
+            asks.set_enabled(dm.member, ask_cmd == "on")
+        on = asks.enabled(dm.member) if ask_cmd == "show" else ask_cmd == "on"
+        log(f"{dm.member}님이 '/ask{'' if ask_cmd == 'show' else ' ' + ask_cmd}' 입력 → 먼저 묻기 {'켜짐' if on else '꺼짐'}")
+        text = {"on": "좋아! 가끔 출퇴근길에 가볍게 하나씩 물어볼게. 그만 받고 싶으면 언제든 /ask off 라고 보내 줘.",
+                "off": "알겠어! 이제 내가 먼저 질문을 보내지 않을게. 다시 받고 싶으면 /ask on 이라고 보내 줘.",
+                "show": (f"지금 내가 먼저 보내는 질문은 {'켜져 있어' if on else '꺼져 있어'}. "
+                         f"/ask {'off' if on else 'on'} 으로 바꿀 수 있어.")}[ask_cmd]
+        if not dry_run:
+            store.mark_answered(unanswered)
+        sent = dm.send(text, dry_run=dry_run)
+        return bool(sent) and not dry_run
     command = next((c for m in reversed(unanswered) if (c := stardust.parse_command(m["text"]))), None)
     if command:
         # 별조각은 하네스의 것이라 모델을 거치지 않고 하네스가 바로 답한다 (documents/stardust.md)
@@ -389,6 +425,8 @@ def converse(dm, agent, log, dry_run=False, open_profile=None):
         return bool(sent) and not dry_run
     history = store.history(40) if not dry_run else store.history(40) + msgs
     note = memory_turn(dm, agent, log, history, unanswered, dry_run=dry_run)
+    asked = answer_turn(dm.member, unanswered, log, dry_run=dry_run)
+    note = "\n\n".join(n for n in (note, asked) if n) or None
     text = agent.reply(dm.member, history, note=note)
     log(f"1:1 답장 → {dm.member}: {text}")
     if not dry_run:
