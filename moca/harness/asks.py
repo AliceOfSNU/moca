@@ -169,6 +169,20 @@ def _last_talk(member):
     return dt.datetime.strptime(last, FMT) if last else None
 
 
+def left_moim(member):
+    """모임을 떠났는가: 모임 채팅의 '(운영진에게만) …님께서 모임을 탈퇴하셨습니다'가 그 사람이 모임 채팅에서 마지막으로
+    한 말보다 나중이면. 다시 가입한다는 알림은 없어서, 돌아와 말을 하면 돌아온 것으로 본다."""
+    from chatbot.store import ChatStore
+    left = said = ""
+    for m in ChatStore().history(100000):
+        at = m.get("read_at") or ""
+        if f"{member}님께서 모임을 탈퇴하셨습니다" in (m.get("text") or ""):
+            left = max(left, at)
+        elif m.get("sender") == member:
+            said = max(said, at)
+    return bool(left) and left > said
+
+
 def gate(member, now=None, slot=None, check_slot=True, consents=None):
     """May 모카 ask this member first, right now? Returns None if yes, else the reason (Korean, for the log).
     `slot`: the window being filled (None = 손으로, 시간대 무시). `check_slot=False` skips the one-per-window
@@ -182,6 +196,8 @@ def gate(member, now=None, slot=None, check_slot=True, consents=None):
         return "1:1 동의 전"
     if dm_optout.is_off(member):
         return "1:1을 그만둠"
+    if left_moim(member):
+        return "모임을 떠남"
     if not shares(member):
         return "기억 운영 활용 동의가 없음 (/memory off)"
     if not enabled(member):
