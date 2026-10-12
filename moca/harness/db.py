@@ -112,7 +112,8 @@ CREATE TABLE IF NOT EXISTS questions (
   id            TEXT PRIMARY KEY,
   member        TEXT NOT NULL,
   slot          TEXT NOT NULL,              -- 출근길 | 퇴근길 | 지금(손으로 보낸 것)
-  kind          TEXT NOT NULL DEFAULT 'explore',
+  kind          TEXT NOT NULL DEFAULT 'explore', -- explore (시간대에 먼저) | followup (답을 받고 이어서)
+  parent_id     TEXT,                       -- followup이 이어 묻는 질문
   status        TEXT NOT NULL,              -- held | rejected | ready | sent | failed | blocked | answered | expired
   axis          TEXT, target TEXT, why TEXT, message TEXT,
   choices       TEXT NOT NULL DEFAULT '[]', -- JSON, 번호 순서대로
@@ -142,6 +143,9 @@ def connect():
     con.execute("PRAGMA foreign_keys = ON")
     con.execute("PRAGMA journal_mode = WAL")    # 루프가 쓰는 동안 대시보드가 읽을 수 있게
     con.executescript(SCHEMA)
+    # 나중에 생긴 칸: CREATE TABLE IF NOT EXISTS는 이미 있는 표에 칸을 더하지 않는다
+    if "parent_id" not in {r["name"] for r in con.execute("PRAGMA table_info(questions)")}:
+        con.execute("ALTER TABLE questions ADD COLUMN parent_id TEXT")
     return con
 
 

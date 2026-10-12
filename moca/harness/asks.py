@@ -32,6 +32,7 @@ NOW_SLOT = "지금"                 # 손으로 바로 보낸 것 (시간대 밖
 DAILY_CAP = 2
 EXPIRE_AFTER = dt.timedelta(days=2)
 PAUSE_AFTER, PAUSE_FOR = 2, dt.timedelta(days=7)
+MAX_FOLLOWUPS = 2              # 한 질문 줄기에서 이어 묻는 횟수 (moca_asks.md: 같은 주제의 후속만)
 QUIET_FOR = dt.timedelta(minutes=60)
 FMT = "%Y-%m-%d %H:%M:%S"
 FOOTER = "(이런 질문을 그만 받고 싶으면 /ask off)"
@@ -73,16 +74,17 @@ def get(qid, con=None):
     return _row(r) if r else None
 
 
-def record_draft(member, slot, q, problems, now=None):
-    """Keep every draft, sent or not. status: held (모델이 안 묻기로), rejected (하네스가 거름), ready (보낼 것)."""
+def record_draft(member, slot, q, problems, now=None, kind="explore", parent_id=None):
+    """Keep every draft, sent or not. status: held (모델이 안 묻기로), rejected (하네스가 거름), ready (보낼 것).
+    kind='followup'은 답을 받고 이어 묻는 질문이고 parent_id가 그 앞 질문이다."""
     now = _now(now)
     status = "held" if not q.get("ask") else "rejected" if problems else "ready"
     qid = f"q_{now:%Y%m%d}_{secrets.token_hex(3)}"
     with db.connect() as con:
         con.execute(
-            "INSERT INTO questions (id, member, slot, kind, status, axis, target, why, message, choices, multi, "
-            "reads_as, does_not_mean, hold_reason, problems, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (qid, member, slot, "explore", status, q.get("axis") or None, q.get("target") or None,
+            "INSERT INTO questions (id, member, slot, kind, parent_id, status, axis, target, why, message, choices, "
+            "multi, reads_as, does_not_mean, hold_reason, problems, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (qid, member, slot, kind, parent_id, status, q.get("axis") or None, q.get("target") or None,
              q.get("why_this_person") or None, q.get("message") or None, json.dumps(q.get("choices") or [], ensure_ascii=False),
              int(bool(q.get("multi"))), q.get("reads_as") or None, q.get("does_not_mean") or None,
              q.get("hold_reason") or None, json.dumps(problems, ensure_ascii=False), _ts(now)))
@@ -133,6 +135,34 @@ def recent(member, n=10):
     """이 멤버에게 실제로 보낸 최근 질문들 — 질문을 만들 때 겹치지 않게 보여 준다."""
     sent = [q for q in questions(member) if q["sent_at"]]
     return sent[-n:]
+
+
+def followups_before(q, con=None):
+    """이 질문 줄기에서 이미 이어 물은 횟수: q가 followup이면 그 위로 올라가며 센다."""
+    con = con or db.connect()
+    n = 0
+    while q and q["kind"] == "followup":
+        n += 1
+        q = get(q["parent_id"], con) if q.get("parent_id") else None
+    return n
+
+
+def followup_gate(member, consents=None):
+    """이어 묻기 직전 확인: 시간대·하루 횟수·대기 규칙은 보지 않는다 (같은 대화 안의 후속이다).
+    동의와 그만 받기는 본다. None이면 물어도 된다."""
+    from chatbot.dm import load_consent
+    from chatbot.memory_consent import shares
+    from harness import dm_optout
+    consents = consents if consents is not None else load_consent()
+    if (consents.get(member) or {}).get("status") != "agreed":
+        return "1:1 동의 전"
+    if dm_optout.is_off(member):
+        return "1:1을 그만둠"
+    if not shares(member):
+        return "기억 운영 활용 동의가 없음 (/memory off)"
+    if not enabled(member):
+        return "/ask off"
+    return None
 
 
 # --- /ask off|on ------------------------------------------------------------------------------------
@@ -205,7 +235,7 @@ def gate(member, now=None, slot=None, check_slot=True, consents=None):
     if slot and slot != NOW_SLOT:
         if slot_at(now) != slot:
             return f"{slot} 시간대가 아님"
-    mine = questions(member)
+    mine = [q for q in questions(member) if q["kind"] == "explore"]   # 후속 질문은 시간대·하루 횟수·쉬기에 세지 않는다
     today = now.strftime("%Y-%m-%d")
     if check_slot and slot and slot != NOW_SLOT and any(
             q["slot"] == slot and q["created_at"][:10] == today for q in mine):

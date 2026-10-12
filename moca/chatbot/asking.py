@@ -67,7 +67,9 @@ TASK = """
 이 작업에서는 도구를 쓸 수 없어 — 위에 적힌 도구 안내는 대화할 때의 것이야.
 
 {guide}
+"""
 
+FIELDS = """
 ## 내보내는 모양
 
 - ask: 지금 이 사람에게 물을 만한 질문이 있으면 true. 없으면 false — 지침의 네 가지 점검 중 하나라도 답이
@@ -86,6 +88,32 @@ TASK = """
 - multi: 여러 개 골라도 되는 질문이면 true.
 - reads_as: 답으로 알 수 있는 것.
 - does_not_mean: 이 답으로 추론하면 안 되는 것 (지침의 '답을 어디까지 읽을 것인가').
+"""
+
+# 먼저 물은 질문에 답이 오면, 보통 1:1 프롬프트 대신 이것으로 답한다 (chatbot/dm.py followup_turn).
+# 같은 지침과 같은 질문 형식을 쓰니 후속 질문도 선택지가 붙고, 번호는 여전히 하네스가 붙인다.
+FOLLOWUP_TASK = """
+## 지금 할 일: 방금 온 답에 반응하고, 이어서 물을지 정하기
+
+조금 전 네가 '{member}'님에게 먼저 보낸 질문에 방금 말이 왔어 (아래 '방금 물은 질문과 온 말').
+
+1. is_answer: 방금 온 말이 그 질문에 대한 답이면 true. 질문과 상관없는 이야기를 하고 있으면 false —
+   그때는 나머지 칸은 비워 둬. 하네스가 보통 대화로 넘긴다.
+2. reaction: 답에 짧고 따뜻하게 반응하는 한두 문장, 모카의 말투로. 번호만 왔다면("2", "2번") 그 번호의
+   선택지로, 선택지 글을 그대로 썼다면 그 선택지로 이해해. 답 하나로 그 사람을 넘겨짚지 마.
+   reaction에는 질문을 넣지 마 — 이어서 물을 것은 아래 질문 칸에 따로 쓴다.
+3. 이어서 물을지: 같은 탐색 방향('{axis}')으로 한 걸음 더 들어가 볼 만하면 ask=true로 후속 질문 하나를
+   만들어. 답만으로 이미 충분하거나, 더 물으면 캐묻는 느낌이 들 것 같으면 ask=false. 이번이 이 질문 줄기의
+   {depth}번째 후속이고 최대 {max}번까지다. 새 주제로 넘어가지 마 — axis는 '{axis}' 그대로 둔다.
+   후속 질문도 아래 지침과 형식을 그대로 따른다: 하나만, 짧게, 선택지 {lo}~{hi}개.
+
+이 작업에서는 도구를 쓸 수 없어 — 위에 적힌 도구 안내는 대화할 때의 것이야.
+
+{guide}
+"""
+
+FOLLOWUP_FIELDS = """
+- is_answer, reaction: 위 1·2번.
 """
 
 
@@ -141,7 +169,7 @@ def asked_block(member):
 def build(member, slot):
     from chatbot.dm import dm_prompt, format_line, member_dir
     from chatbot.store import ChatStore
-    instructions = dm_prompt(member) + TASK.format(
+    instructions = dm_prompt(member) + (TASK + FIELDS).format(
         member=member, guide=GUIDE.read_text(encoding="utf-8"), lo=MIN_CHOICES, hi=MAX_CHOICES,
         clen=LIMITS["choice"])
     history = ChatStore(member_dir(member)).history(HISTORY)
@@ -157,6 +185,41 @@ def draft(agent, member, slot="출근길"):
     resp = agent.client.responses.create(
         model=agent.model, reasoning=agent.reasoning, instructions=instructions, input=prompt,
         text={"format": {"type": "json_schema", "name": "asking", "strict": True, "schema": SCHEMA}})
+    return json.loads(resp.output_text)
+
+
+FOLLOWUP_SCHEMA = {**SCHEMA, "required": ["is_answer", "reaction"] + SCHEMA["required"],
+                   "properties": {"is_answer": {"type": "boolean"}, "reaction": {"type": "string"},
+                                  **SCHEMA["properties"]}}
+
+
+def build_followup(member, parent, answer, depth, max_depth):
+    """The asking prompt in follow-up mode: the same rules and history, plus the question just asked and what
+    the member said back."""
+    from chatbot.dm import dm_prompt, format_line, member_dir
+    from chatbot.store import ChatStore
+    guide = GUIDE.read_text(encoding="utf-8")
+    fmt = dict(member=member, guide=guide, lo=MIN_CHOICES, hi=MAX_CHOICES, clen=LIMITS["choice"],
+               axis=parent["axis"], depth=depth, max=max_depth)
+    instructions = dm_prompt(member) + (FOLLOWUP_TASK + FIELDS + FOLLOWUP_FIELDS).format(**fmt)
+    history = ChatStore(member_dir(member)).history(HISTORY)
+    convo = ("## 1:1 대화 기록 (오래된 순, 최근 %d개)\n" % HISTORY
+             + ("\n".join(format_line(m) for m in history) if history else "(아직 없음)"))
+    opts = "\n".join(f"{i}) {c}" for i, c in enumerate(parent["choices"], 1))
+    just = (f"## 방금 물은 질문과 온 말\n질문 ({parent['axis']}): {parent['message']}\n{opts}"
+            + ("\n(여러 개 골라도 되는 질문)" if parent["multi"] else "")
+            + f"\n이 질문으로 알 수 있는 것: {parent.get('reads_as') or '-'}"
+            + f"\n이 답으로 읽으면 안 되는 것: {parent.get('does_not_mean') or '-'}"
+            + f"\n\n방금 온 말: {answer}")
+    now = f"## 지금\n{today()}"
+    return instructions, "\n\n".join([known_block(member), convo, asked_block(member), just, now])
+
+
+def followup(agent, member, parent, answer, depth, max_depth):
+    instructions, prompt = build_followup(member, parent, answer, depth, max_depth)
+    resp = agent.client.responses.create(
+        model=agent.model, reasoning=agent.reasoning, instructions=instructions, input=prompt,
+        text={"format": {"type": "json_schema", "name": "asking_followup", "strict": True, "schema": FOLLOWUP_SCHEMA}})
     return json.loads(resp.output_text)
 
 

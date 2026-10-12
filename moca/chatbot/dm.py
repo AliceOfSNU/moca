@@ -303,23 +303,61 @@ def ask_memory_scope(chat, agent, log, dry_run=False):
     return asked
 
 
-def answer_turn(member, new_msgs, log, dry_run=False):
-    """모카가 먼저 보낸 질문에 답이 오는 중이면: 답 원문을 그 질문에 붙이고(harness/asks.py), 1:1 모카에게
-    무엇을 물었는지 알려 준다 — "2"만 와도 무슨 뜻인지 알게. 답의 해석과 지식 기록은 다음 단계다."""
+def followup_turn(dm, agent, log, new_msgs, store, dry_run=False):
+    """모카가 먼저 보낸 질문이 답을 기다리는 중에 멤버가 말을 했으면, 보통 1:1 프롬프트 대신 묻기 프롬프트의
+    후속 모드로 답한다(chatbot/asking.py followup): 답에 반응하고, 같은 주제로 더 물을 만하면 선택지가 붙은
+    후속 질문 하나를 함께 보낸다. 번호는 하네스가 붙이고, 후속 질문도 기록되어 그다음 답이 또 이어진다.
+
+    Returns None if this turn isn't an answer (no open question, or the member is talking about something else —
+    then the usual reply handles it), else whether a message was sent. 답의 해석과 지식 기록은 다음 단계다."""
+    from chatbot import asking
+    member = dm.member
     q = asks.open_question(member)
     if q is None or not new_msgs:
         return None
     answer = " / ".join(m["text"] for m in new_msgs if m.get("text"))
+    depth = asks.followups_before(q) + 1
+    f = asking.followup(agent, member, q, answer, depth, asks.MAX_FOLLOWUPS)
+    if not f["is_answer"]:
+        log(f"{member}님의 말은 먼저 물은 질문({q['id']})의 답이 아님 — 보통 대화로 답함")
+        return None
     log(f"{member}님이 먼저 물은 질문({q['id']})에 답함: {answer[:80]}")
     if not dry_run:
         asks.mark_answered(q["id"], answer)
-    opts = "\n".join(f"{i}) {c}" for i, c in enumerate(q["choices"], 1))
-    return (f"조금 전 네가 이 멤버에게 먼저 보낸 질문이 있고, 방금 온 말은 그 답일 가능성이 커.\n"
-            f"보낸 질문: {q['message']}\n{opts}" + ("\n(여러 개 골라도 되는 질문)" if q["multi"] else "") + "\n"
-            "번호만 왔다면 그 번호의 선택지로 이해해. 답에 짧고 따뜻하게 반응해. 같은 주제로 자연스러운 후속 질문 "
-            "하나는 해도 되지만, 새 주제의 질문은 꺼내지 마. 이 답으로 그 사람을 넘겨짚지 마"
-            + (f" — {q['does_not_mean']}" if q.get("does_not_mean") else ".") +
-            "\n답이 질문과 상관없는 이야기라면 그 이야기에 답하고, 질문을 다시 묻지는 마.")
+    text = f["reaction"].strip() or "알려 줘서 고마워!"
+    follow_id = None
+    if f["ask"]:
+        previous = [x["message"] for x in asks.recent(member, n=50)]
+        why = (asks.followup_gate(member)
+               or (f"이 줄기에서 이미 {asks.MAX_FOLLOWUPS}번 이어 물음" if depth > asks.MAX_FOLLOWUPS else None)
+               or (f"주제가 바뀜 ({f['axis']} ≠ {q['axis']})" if f["axis"] != q["axis"] else None))
+        bad = [why] if why else asking.problems(f, previous)
+        log(f"  이어 묻기 ({depth}번째): [{f['axis']}] {f['message']}" + (f" / 걸림: {'; '.join(bad)}" if bad else ""))
+        if not dry_run:
+            follow_id, status = asks.record_draft(member, q["slot"], f, bad, kind="followup", parent_id=q["id"])
+            if status != "ready":
+                follow_id = None
+        if not bad:
+            text += "\n\n" + asking.rendered(f)
+    else:
+        log(f"  더 묻지 않음: {f['hold_reason']}")
+    if not dry_run:
+        store.mark_answered(new_msgs)  # before sending: a failed send must not become a double reply later
+    log(f"1:1 답장 → {member}: {text}")
+    sent = dm.send(text, dry_run=dry_run)
+    if follow_id:
+        asks.mark_sent(follow_id, asking.rendered(f), ok=bool(sent))
+    log("  전송 완료" if sent and not dry_run else ("  (전송 안 함)" if dry_run else "  전송 실패"))
+    return bool(sent) and not dry_run
+
+
+def waiting_note(member):
+    """질문이 답을 기다리는 중인데 멤버가 다른 이야기를 할 때 보통 답장에 붙이는 한 줄."""
+    q = asks.open_question(member)
+    if q is None:
+        return None
+    return (f"참고: 조금 전 네가 이 멤버에게 먼저 보낸 질문(「{q['message']}」)이 아직 답을 기다리고 있지만, 방금 온 말은 "
+            "그 답이 아니야. 이 이야기에 답하고, 질문을 다시 꺼내거나 재촉하지 마.")
 
 
 def converse(dm, agent, log, dry_run=False, open_profile=None):
@@ -425,8 +463,12 @@ def converse(dm, agent, log, dry_run=False, open_profile=None):
         return bool(sent) and not dry_run
     history = store.history(40) if not dry_run else store.history(40) + msgs
     note = memory_turn(dm, agent, log, history, unanswered, dry_run=dry_run)
-    asked = answer_turn(dm.member, unanswered, log, dry_run=dry_run)
-    note = "\n\n".join(n for n in (note, asked) if n) or None
+    if note is None:
+        # 먼저 물은 질문의 답이면 묻기 프롬프트(후속 모드)가 답한다 — 후속 질문에도 선택지가 붙게
+        handled = followup_turn(dm, agent, log, unanswered, store, dry_run=dry_run)
+        if handled is not None:
+            return handled
+        note = waiting_note(dm.member)
     text = agent.reply(dm.member, history, note=note)
     log(f"1:1 답장 → {dm.member}: {text}")
     if not dry_run:
