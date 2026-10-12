@@ -99,7 +99,9 @@ class DirectChat(ChatScreen):
                 self.dev.type_text(self.member)
             time.sleep(2.5)
             root = self.ui.dump()
-            box = first_id(root, "search_searchedit") or box
+            # `or`로 쓰면 안 된다: 자식 노드가 없는 Element는 거짓이라 새로 읽은 칸 대신 탭하기 전의 칸(힌트 글자)이 남는다
+            fresh = first_id(root, "search_searchedit")
+            box = fresh if fresh is not None else box
             typed = (box.get("text") or "").strip()
             if typed == self.member:
                 break
