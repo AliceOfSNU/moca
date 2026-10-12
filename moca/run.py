@@ -365,7 +365,7 @@ def no_work():
 
 
 def asking_due(args):
-    """먼저 묻기: --asking일 때만, 출퇴근 시간대에 물어도 되는 멤버가 있으면 (harness/asks.py)."""
+    """먼저 묻기: --asking일 때만, 저녁 시간대에 물어도 되는 멤버가 있으면 (harness/asks.py)."""
     if not args.asking or args.dry_run:
         return False
     try:
@@ -377,7 +377,7 @@ def asking_due(args):
 
 def asking_session(args, chat, dm_agent):
     from chatbot.asking_send import ask_round
-    log("먼저 묻기 (출퇴근 시간대)")
+    log("먼저 묻기 (저녁 시간대)")
     done = ask_round(chat, dm_agent, log)
     log(f"  먼저 묻기: {', '.join(f'{m} {s}' for m, s in done) or '물을 사람 없음'}")
 

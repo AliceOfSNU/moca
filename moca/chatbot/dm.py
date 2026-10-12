@@ -57,7 +57,7 @@ def dm_prompt(member):
 - 기록과 개인정보에 대해 물으면 기능 문서에 적힌 대로 정확하게 답해.
 - 멤버가 자기에 대해 무엇을 기억하는지 궁금해하거나 활용 범위를 바꾸고 싶어 하면, '/memory'로 확인하고
   '/memory on' · '/memory off'로 모임 운영 활용을 켜고 끌 수 있다고 알려 줘.
-- 모카가 출퇴근길에 먼저 보내는 질문이 부담스럽거나 그만 받고 싶다고 하면, '/ask off'로 끄고 '/ask on'으로
+- 모카가 며칠에 한 번 저녁에 먼저 보내는 질문이 부담스럽거나 그만 받고 싶다고 하면, '/ask off'로 끄고 '/ask on'으로
   다시 켤 수 있다고 알려 줘. 대신 끄지는 마 — 멤버가 직접 입력해야 한다."""         + POST_SEARCH_RULES + RECORDING_RULES + notes_block(member, sharing=shares(member)) + own_block(member) + plans_block() + stardust.member_block(member) + status_block()
 
 
@@ -423,7 +423,7 @@ def converse(dm, agent, log, dry_run=False, open_profile=None):
             asks.set_enabled(dm.member, ask_cmd == "on")
         on = asks.enabled(dm.member) if ask_cmd == "show" else ask_cmd == "on"
         log(f"{dm.member}님이 '/ask{'' if ask_cmd == 'show' else ' ' + ask_cmd}' 입력 → 먼저 묻기 {'켜짐' if on else '꺼짐'}")
-        text = {"on": "좋아! 가끔 출퇴근길에 가볍게 하나씩 물어볼게. 그만 받고 싶으면 언제든 /ask off 라고 보내 줘.",
+        text = {"on": "좋아! 며칠에 한 번 저녁에 가볍게 하나씩 물어볼게. 그만 받고 싶으면 언제든 /ask off 라고 보내 줘.",
                 "off": "알겠어! 이제 내가 먼저 질문을 보내지 않을게. 다시 받고 싶으면 /ask on 이라고 보내 줘.",
                 "show": (f"지금 내가 먼저 보내는 질문은 {'켜져 있어' if on else '꺼져 있어'}. "
                          f"/ask {'off' if on else 'on'} 으로 바꿀 수 있어.")}[ask_cmd]

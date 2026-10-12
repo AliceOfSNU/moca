@@ -3,10 +3,12 @@
 무엇을 물을지는 모델이 정한다 (chatbot/asking.py). 여기는 그 앞뒤의 규칙만 — 모델이 지침을 읽었다고 지켰다는
 보장은 없으니, 횟수·시간·동의는 하네스가 센다.
 
-언제 (로하가 정함, 2026-10-11)
-- 출근길 07:30–09:30, 퇴근길 18:00–20:00, 매일. 시간대마다 한 번만 만든다 — 모델이 '지금은 안 물음'이라고
-  해도 그 시간대는 쓴 것이다 (같은 시간대에 다시 만들면 비용만 들고, 결국 무언가를 묻게 된다).
-- 하루 두 번은 상한이지 할당량이 아니다.
+언제 (로하가 정함, 2026-10-12 — 처음의 하루 두 번(출퇴근길)은 너무 잦았다)
+- 저녁 19:00–21:00. 시간대마다 한 번만 만든다 — 모델이 '지금은 안 물음'이라고 해도 그 시간대는 쓴 것이다
+  (같은 시간대에 다시 만들면 비용만 들고, 결국 무언가를 묻게 된다).
+- 한 멤버에게 3일에 한 번: 마지막으로 보낸 질문의 날짜부터 센다 (월요일에 보냈으면 목요일부터). 안 물음·실패는
+  보낸 것이 아니라서 다음 날 저녁에 다시 본다. 상한이지 할당량이 아니다.
+- 답이 오면 이어 묻기는 한 번까지.
 
 누구에게
 - 1:1에 동의했고, 1:1을 그만두지 않았고, 기억을 모임 운영에 써도 된다고 했고(/memory on), /ask off가 아닌 멤버.
@@ -27,12 +29,12 @@ import secrets
 
 from harness import db
 
-WINDOWS = {"출근길": ("07:30", "09:30"), "퇴근길": ("18:00", "20:00")}
+WINDOWS = {"저녁": ("19:00", "21:00")}
 NOW_SLOT = "지금"                 # 손으로 바로 보낸 것 (시간대 밖)
-DAILY_CAP = 2
+EVERY_DAYS = 3                    # 한 멤버에게 먼저 묻는 간격 (보낸 날짜 기준)
 EXPIRE_AFTER = dt.timedelta(days=2)
 PAUSE_AFTER, PAUSE_FOR = 2, dt.timedelta(days=7)
-MAX_FOLLOWUPS = 2              # 한 질문 줄기에서 이어 묻는 횟수 (moca_asks.md: 같은 주제의 후속만)
+MAX_FOLLOWUPS = 1              # 한 질문 줄기에서 이어 묻는 횟수 (moca_asks.md: 같은 주제의 후속만)
 QUIET_FOR = dt.timedelta(minutes=60)
 FMT = "%Y-%m-%d %H:%M:%S"
 FOOTER = "(이런 질문을 그만 받고 싶으면 /ask off)"
@@ -240,8 +242,11 @@ def gate(member, now=None, slot=None, check_slot=True, consents=None):
     if check_slot and slot and slot != NOW_SLOT and any(
             q["slot"] == slot and q["created_at"][:10] == today for q in mine):
         return f"오늘 {slot}에 이미 만들었음"
-    if sum(1 for q in mine if (q["sent_at"] or "")[:10] == today) >= DAILY_CAP:
-        return f"오늘 이미 {DAILY_CAP}번 물었음"
+    last_sent = max((q["sent_at"][:10] for q in mine if q["sent_at"]), default=None)
+    if last_sent:
+        nxt = dt.datetime.strptime(last_sent, "%Y-%m-%d").date() + dt.timedelta(days=EVERY_DAYS)
+        if now.date() < nxt:
+            return f"{EVERY_DAYS}일에 한 번 — 마지막 {last_sent[5:]}, 다음은 {nxt:%m-%d}부터"
     if open_question(member, now):
         return "답을 기다리는 질문이 있음"
     sent = [q for q in mine if q["sent_at"]]

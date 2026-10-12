@@ -76,8 +76,8 @@ def _status(members):
     consents = load_consent()
     asks.expire()
     slot = asks.slot_at()
-    print(f"지금 시간대: {slot or '없음'} (출근길 {asks.WINDOWS['출근길'][0]}–{asks.WINDOWS['출근길'][1]}, "
-          f"퇴근길 {asks.WINDOWS['퇴근길'][0]}–{asks.WINDOWS['퇴근길'][1]})")
+    windows = ", ".join(f"{s} {a}–{b}" for s, (a, b) in asks.WINDOWS.items())
+    print(f"지금 시간대: {slot or '없음'} ({windows}, 한 멤버에게 {asks.EVERY_DAYS}일에 한 번)")
     for m in members or sorted(consents):
         why = asks.gate(m, slot=slot or asks.NOW_SLOT, consents=consents)
         print(f"\n{m}: {'물을 수 있음' if why is None else why}")

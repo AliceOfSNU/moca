@@ -1,7 +1,7 @@
 """먼저 묻기 — 멤버에게 보낼 질문 하나를 만든다 (documents/asking.md).
 
 따로 떨어진 에이전트가 아니다. 1:1 모카와 같은 규칙(dm_prompt)과 같은 대화 기록을 보고, 질문을 어떻게
-골라야 하는지에 대한 지침만 더 받는다. 하네스가 하루 두 번(출근길·퇴근길) 이것을 불러 질문을 만들고,
+골라야 하는지에 대한 지침만 더 받는다. 하네스가 저녁 시간대에(한 멤버에게 3일에 한 번까지) 이것을 불러 질문을 만들고,
 모카의 말투로 보낸다. 답을 받아 오는 일은 그 뒤 1:1 모카에게 맡기는 작업이다 — 아직 없다.
 
 질문의 문장은 모델이 쓰지만, **선택지의 번호는 하네스가 붙인다.** 멤버는 "2"라고만 답할 수 있어야 하고,
@@ -14,7 +14,7 @@
 이 파일은 만들기만 한다. 언제 누구에게 보낼지는 harness/asks.py, 실제로 보내는 것은 chatbot/asking_send.py.
 
     python -m chatbot.asking 김범진 최윤서             # 멤버마다 질문 하나씩
-    python -m chatbot.asking 로하 --n 3 --slot 퇴근길  # 같은 멤버로 세 번 — 얼마나 흔들리는지 본다
+    python -m chatbot.asking 로하 --n 3 --slot 저녁  # 같은 멤버로 세 번 — 얼마나 흔들리는지 본다
 """
 import argparse
 import difflib
@@ -32,7 +32,7 @@ AXES = ("참여 조건과 활동 선호",
         "AI 사용 밀도", "새로운 AI 탐색", "업무 속 AI", "일상 속 AI", "AI 이슈 탐구",
         "관심 분야와 적용하고 싶은 곳",
         "모임에서 기대하는 경험")
-SLOTS = ("출근길", "퇴근길")
+SLOTS = ("저녁",)
 LIMITS = {"message": 300, "choice": 40}
 MIN_CHOICES, MAX_CHOICES = 2, 4
 # 1:1 안내문이 멤버에게 보내지 말라고 한 것들. 모카가 거꾸로 묻는 일은 없어야 한다
@@ -82,7 +82,7 @@ FIELDS = """
   질문은 하나만. 1~3문장. '여러 개 골라도 돼'도 쓰지 마 — multi가 true면 하네스가 붙인다.
   날짜·요일·시간은 아래 기록에 적힌 그대로만 써. 기억으로 짐작해 요일을 붙이지 마 — 틀리면 멤버에게
   틀린 사실을 말하는 거야. 확실하지 않으면 날짜 없이 써.
-- choices: 선택지 {lo}~{hi}개. 출퇴근길에 폰으로 읽는다 — 많을수록 고르기 어렵다.
+- choices: 선택지 {lo}~{hi}개. 저녁에 폰으로 읽는다 — 많을수록 고르기 어렵다.
   짧게(각 {clen}자 이내). 번호를 붙이지 마. 모르거나 해당 없을 수 있는
   질문이면 '모르겠어', '안 써봤어', '기타' 같은 빠져나갈 자리를 넣어.
 - multi: 여러 개 골라도 되는 질문이면 true. 단, "안 썼어"·"해당 없어"처럼 다른 것과 함께 고를 수 없는 선택지가
@@ -181,7 +181,7 @@ def build(member, slot):
     return instructions, "\n\n".join([known_block(member), convo, asked, now])
 
 
-def draft(agent, member, slot="출근길"):
+def draft(agent, member, slot="저녁"):
     instructions, prompt = build(member, slot)
     resp = agent.client.responses.create(
         model=agent.model, reasoning=agent.reasoning, instructions=instructions, input=prompt,
@@ -275,7 +275,7 @@ def main():
     ap = argparse.ArgumentParser(description="먼저 물을 질문을 만들어 보기만 한다 (보내지 않음)")
     ap.add_argument("members", nargs="+")
     ap.add_argument("--n", type=int, default=1, help="멤버마다 몇 번 만들어 볼지")
-    ap.add_argument("--slot", choices=SLOTS, default="출근길")
+    ap.add_argument("--slot", choices=SLOTS, default="저녁")
     args = ap.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
 

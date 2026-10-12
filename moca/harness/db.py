@@ -111,7 +111,7 @@ CREATE VIEW IF NOT EXISTS members_of AS
 CREATE TABLE IF NOT EXISTS questions (
   id            TEXT PRIMARY KEY,
   member        TEXT NOT NULL,
-  slot          TEXT NOT NULL,              -- 출근길 | 퇴근길 | 지금(손으로 보낸 것)
+  slot          TEXT NOT NULL,              -- 저녁 | 지금(손으로 보낸 것); 10/12까지는 출근길 | 퇴근길
   kind          TEXT NOT NULL DEFAULT 'explore', -- explore (시간대에 먼저) | followup (답을 받고 이어서)
   parent_id     TEXT,                       -- followup이 이어 묻는 질문
   status        TEXT NOT NULL,              -- held | rejected | ready | sent | failed | blocked | answered | expired
