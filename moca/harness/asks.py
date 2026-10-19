@@ -39,6 +39,9 @@ QUIET_FOR = dt.timedelta(minutes=60)
 FMT = "%Y-%m-%d %H:%M:%S"
 FOOTER = "(이런 질문을 그만 받고 싶으면 /ask off)"
 FIELDS = ("axis", "target", "why", "message", "reads_as", "does_not_mean", "hold_reason")
+# 루프가 --asking 없이 돌면 run.py가 False로 둔다: 새 질문도 이어 묻기도 보내지 않는다. 이미 보낸 질문에
+# 답이 오면 답은 기록하고 반응만 한다. CLI(asking_send, dm reply)로 손으로 시험할 때는 켜진 채다.
+ACTIVE = True
 
 
 def _now(now=None):
@@ -155,6 +158,8 @@ def followup_gate(member, consents=None):
     from chatbot.dm import load_consent
     from chatbot.memory_consent import shares
     from harness import dm_optout
+    if not ACTIVE:
+        return "먼저 묻기가 꺼져 있음 (루프에 --asking 없음)"
     consents = consents if consents is not None else load_consent()
     if (consents.get(member) or {}).get("status") != "agreed":
         return "1:1 동의 전"

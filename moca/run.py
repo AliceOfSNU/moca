@@ -482,7 +482,7 @@ def main():
                     help="hour of the day (0-23) after which 모카 asks members the 기억 활용 범위 question")
     ap.add_argument("--no-memory-ask", action="store_true", help="never ask the 기억 활용 범위 question")
     ap.add_argument("--asking", action="store_true",
-                    help="send scheduled 1:1 questions in the commute windows (harness/asks.py); off by default")
+                    help="send scheduled 1:1 questions in the evening window, and follow-ups (harness/asks.py); off by default")
     ap.add_argument("--admin-hour", type=int, default=10,
                     help="hour of the day (0-23) after which 운영 모카 does its daily 정모 round")
     ap.add_argument("--no-admin", action="store_true", help="skip the daily 운영 모카 round")
@@ -490,6 +490,7 @@ def main():
                     help="minimum seconds between replies 모카 sends without being called (0 = no limit)")
     args = ap.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
+    asks.ACTIVE = args.asking  # 꺼져 있으면 이어 묻기도 보내지 않는다 (먼저 보낸 질문의 답에는 반응만)
 
     client = openai_client()
     # heartbeat on every successful screen read; a gap becomes a sleep period 모카 is told about (harness/presence.py)

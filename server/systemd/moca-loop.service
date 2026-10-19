@@ -11,7 +11,7 @@ Environment=ANDROID_SDK_ROOT=/opt/android
 Environment=HOME=/root
 Environment=PATH=/opt/android/platform-tools:/usr/local/bin:/usr/bin:/bin
 ExecStartPre=/opt/moca/wait-for-boot.sh
-ExecStart=/opt/moca/.venv/bin/python run.py --asking
+ExecStart=/opt/moca/.venv/bin/python run.py
 Restart=always
 RestartSec=30
 
